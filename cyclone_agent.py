@@ -482,15 +482,15 @@ def init_pool_db():
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
-    # Migração automática: se a tabela pool_ranges existia sem block_index,
-    # significa que era do modo dinâmico antigo ou sequencial. Dropamos para recriar.
+    # Migração automática: se a tabela pool_ranges existia sem block_index ou active_hypothesis,
+    # significa que era do modo antigo. Dropamos para recriar.
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='pool_ranges'")
     has_table = cursor.fetchone()
     if has_table:
         cursor.execute("PRAGMA table_info(pool_ranges)")
         cols = [col[1] for col in cursor.fetchall()]
-        if len(cols) > 0 and "block_index" not in cols:
-            print("[Pool] Migrando banco de dados para suporte a blocos aleatórios...")
+        if len(cols) > 0 and ("block_index" not in cols or "active_hypothesis" not in cols):
+            print("[Pool] Migrando banco de dados para suporte a blocos aleatórios com hipóteses...")
             cursor.execute("DROP TABLE IF EXISTS pool_ranges")
             conn.commit()
 
@@ -502,6 +502,7 @@ def init_pool_db():
             end_hex TEXT NOT NULL,
             status TEXT DEFAULT 'processing',
             worker_id TEXT,
+            active_hypothesis TEXT,
             updated_at REAL
         )
     """)
@@ -582,15 +583,17 @@ def _pool_worker_loop():
         start_hex = resp["range"]["start"]
         end_hex = resp["range"]["end"]
         address = resp["address"]
+        active_hypothesis = resp.get("active_hypothesis", "Uniform")
         
-        print(f"[Worker] Bloco #{block_id} atribuído: {start_hex} -> {end_hex}")
+        print(f"[Worker] Bloco #{block_id} atribuído ({active_hypothesis}): {start_hex} -> {end_hex}")
         
         with state.lock:
             state.current_worker_block = {
                 "id": block_id,
                 "start": start_hex,
                 "end": end_hex,
-                "address": address
+                "address": address,
+                "active_hypothesis": active_hypothesis
             }
         
         # Monta a configuração do job customizado
@@ -680,9 +683,11 @@ def _pool_worker_telemetry_loop():
             
         with state.lock:
             active_block = state.current_worker_block.get("id") if state.current_worker_block else None
+            active_hyp = state.current_worker_block.get("active_hypothesis", "Uniform") if state.current_worker_block else "Idle"
             payload = {
                 "worker_id": worker_id,
                 "block_id": active_block,
+                "active_hypothesis": active_hyp,
                 "progress": state.current_block_progress,
                 "speed_mkeys": int(state.speed_mkeys),
                 "temp_c": state.temp_c,
@@ -1066,7 +1071,24 @@ class CycloneHandler(BaseHTTPRequestHandler):
         if path == "/api/pool/status":
             cfg = load_config()
             db_path = cfg.get("database", {}).get("path", "./cyclone.db")
-            stats = {"pending": 0, "processing": 0, "completed": 0}
+            
+            pool_cfg = cfg.get("pool", {})
+            block_size_gkeys = int(pool_cfg.get("block_size_gkeys", 200))
+            block_size = block_size_gkeys * 1_000_000_000
+            
+            job_cfg = cfg.get("job", {})
+            range_str = job_cfg.get("range", "400000000000000000:7fffffffffffffffff")
+            blocks_total = 23058430 # default fallback
+            try:
+                parts = range_str.split(':')
+                start_val = int(parts[0].strip(), 16)
+                end_val = int(parts[1].strip(), 16)
+                total_keys = end_val - start_val + 1
+                blocks_total = max(1, total_keys // block_size)
+            except Exception:
+                pass
+                
+            stats = {"processing": 0, "completed": 0}
             try:
                 conn = sqlite3.connect(db_path)
                 cursor = conn.cursor()
@@ -1077,20 +1099,23 @@ class CycloneHandler(BaseHTTPRequestHandler):
             except Exception:
                 pass
             
+            completed = stats.get("completed", 0)
+            processing = stats.get("processing", 0)
+            pending = max(0, blocks_total - completed - processing)
+            
             with state.lock:
                 workers_copy = {k: dict(v) for k, v in state.pool_workers.items()}
                 now = time.time()
-                # Filtrar workers inativos há mais de 15 segundos
                 for w_id in list(workers_copy.keys()):
                     if now - workers_copy[w_id].get("last_active", 0) > 15.0:
                         del workers_copy[w_id]
             
             self._json(200, {
                 "status": "ok",
-                "blocks_total": sum(stats.values()) or 1000,
-                "blocks_completed": stats.get("completed", 0),
-                "blocks_processing": stats.get("processing", 0),
-                "blocks_pending": stats.get("pending", 0),
+                "blocks_total": blocks_total,
+                "blocks_completed": completed,
+                "blocks_processing": processing,
+                "blocks_pending": pending,
                 "workers": workers_copy
             })
             return
@@ -1211,7 +1236,7 @@ class CycloneHandler(BaseHTTPRequestHandler):
                 
                 # 1. Verificar se o próprio worker já tem um bloco ativo atribuído (retomada pós-fechamento)
                 cursor.execute(
-                    "SELECT id, start_hex, end_hex FROM pool_ranges WHERE status = 'processing' AND worker_id = ? ORDER BY id ASC LIMIT 1",
+                    "SELECT id, start_hex, end_hex, active_hypothesis FROM pool_ranges WHERE status = 'processing' AND worker_id = ? ORDER BY id ASC LIMIT 1",
                     (worker_id,)
                 )
                 row = cursor.fetchone()
@@ -1219,12 +1244,17 @@ class CycloneHandler(BaseHTTPRequestHandler):
                 if not row:
                     # 2. Tentar reutilizar um bloco expirado (onde worker_id ficou nulo no timeout)
                     cursor.execute(
-                        "SELECT id, start_hex, end_hex FROM pool_ranges WHERE status = 'processing' AND worker_id IS NULL ORDER BY id ASC LIMIT 1"
+                        "SELECT id, start_hex, end_hex, active_hypothesis FROM pool_ranges WHERE status = 'processing' AND worker_id IS NULL ORDER BY id ASC LIMIT 1"
                     )
                     row = cursor.fetchone()
                 
                 if row:
-                    block_id, start_hex, end_hex = row
+                    if len(row) == 4:
+                        block_id, start_hex, end_hex, active_hypothesis = row
+                    else:
+                        block_id, start_hex, end_hex = row[:3]
+                        active_hypothesis = "Resumed"
+                        
                     cursor.execute(
                         "UPDATE pool_ranges SET worker_id = ?, updated_at = ? WHERE id = ?",
                         (worker_id, now, block_id)
@@ -1234,10 +1264,11 @@ class CycloneHandler(BaseHTTPRequestHandler):
                         "status": "ok",
                         "block_id": block_id,
                         "range": {"start": start_hex, "end": end_hex},
-                        "address": address
+                        "address": address,
+                        "active_hypothesis": active_hypothesis
                     })
                 else:
-                    # 3. Sortear um novo bloco aleatório dentro do range do puzzle
+                    # 3. Escolha estocástica de novo bloco
                     range_str = job_cfg.get("range", "400000000000000000:7fffffffffffffffff")
                     parts = range_str.split(':')
                     start_val = int(parts[0].strip(), 16)
@@ -1247,20 +1278,56 @@ class CycloneHandler(BaseHTTPRequestHandler):
                     total_blocks = max(1, total_keys // block_size)
                     
                     import random
-                    block_idx = None
-                    # Tenta sortear um bloco ainda não cadastrado no banco
-                    for _ in range(100):
+                    candidates = []
+                    
+                    # Sorteia até 100 candidatos únicos
+                    attempts = 0
+                    while len(candidates) < 100 and attempts < 300:
                         idx = random.randint(0, total_blocks - 1)
-                        cursor.execute("SELECT id FROM pool_ranges WHERE block_index = ?", (idx,))
-                        if not cursor.fetchone():
-                            block_idx = idx
-                            break
-                            
-                    if block_idx is None:
-                        # Fallback se todas as tentativas colidirem (range esgotado)
+                        if idx not in candidates:
+                            # Confirmar no banco se o bloco já foi processado
+                            cursor.execute("SELECT id FROM pool_ranges WHERE block_index = ?", (idx,))
+                            if not cursor.fetchone():
+                                candidates.append(idx)
+                        attempts += 1
+                        
+                    if not candidates:
                         self._json(200, {"status": "no_work", "message": "Sem blocos disponíveis na Pool."})
                     else:
-                        block_start = start_val + block_idx * block_size
+                        # Seleção estocástica: 50% chance de Uniforme, 50% de Hypothesis Scoring
+                        use_scoring = random.random() >= 0.5 and len(_PLUGINS) > 0
+                        
+                        best_idx = candidates[0]
+                        active_hypothesis = "Uniform"
+                        
+                        if use_scoring:
+                            best_score = -1.0
+                            active_hypothesis = "Hypothesis"
+                            for idx in candidates:
+                                block_start = start_val + idx * block_size
+                                block_end = block_start + block_size - 1
+                                if block_end > end_val:
+                                    block_end = end_val
+                                    
+                                # Somar score de todos os plugins carregados
+                                combined_score = 0.0
+                                for name, plugin in _PLUGINS:
+                                    try:
+                                        plugin_score = plugin.calculate_score(block_start, block_end, start_val, end_val)
+                                        combined_score += plugin_score
+                                    except Exception:
+                                        combined_score += 50.0 # fallback médio
+                                        
+                                combined_score = combined_score / len(_PLUGINS)
+                                
+                                # Pequena perturbação aleatória (Stochastic Selection) para evitar travamento em ótimos locais
+                                combined_score += random.uniform(0.0, 5.0)
+                                
+                                if combined_score > best_score:
+                                    best_score = combined_score
+                                    best_idx = idx
+                                    
+                        block_start = start_val + best_idx * block_size
                         block_end = block_start + block_size - 1
                         if block_end > end_val:
                             block_end = end_val
@@ -1268,10 +1335,10 @@ class CycloneHandler(BaseHTTPRequestHandler):
                         start_hex = f"{block_start:x}"
                         end_hex = f"{block_end:x}"
                         
-                        # Criar novo registro atribuído na pool com o índice do bloco
+                        # Criar novo registro atribuído na pool
                         cursor.execute(
-                            "INSERT INTO pool_ranges (block_index, start_hex, end_hex, status, worker_id, updated_at) VALUES (?, ?, ?, 'processing', ?, ?)",
-                            (block_idx, start_hex, end_hex, worker_id, now)
+                            "INSERT INTO pool_ranges (block_index, start_hex, end_hex, status, worker_id, active_hypothesis, updated_at) VALUES (?, ?, ?, 'processing', ?, ?, ?)",
+                            (best_idx, start_hex, end_hex, worker_id, active_hypothesis, now)
                         )
                         block_id = cursor.lastrowid
                         conn.commit()
@@ -1280,7 +1347,8 @@ class CycloneHandler(BaseHTTPRequestHandler):
                             "status": "ok",
                             "block_id": block_id,
                             "range": {"start": start_hex, "end": end_hex},
-                            "address": address
+                            "address": address,
+                            "active_hypothesis": active_hypothesis
                         })
                 conn.close()
             except Exception as e:
@@ -1323,7 +1391,8 @@ class CycloneHandler(BaseHTTPRequestHandler):
                         "clock": body.get("clock_mhz", 0),
                         "fan": body.get("fan_pct", 0),
                         "block_id": body.get("block_id"),
-                        "progress": body.get("progress", 0.0)
+                        "progress": body.get("progress", 0.0),
+                        "active_hypothesis": body.get("active_hypothesis", "Uniform")
                     }
                 self._json(200, {"status": "ok"})
             else:
@@ -1468,9 +1537,41 @@ def _write_config(cfg, path):
         f.write("\n".join(lines) + "\n")
 
 
+_PLUGINS = []
+
+def load_hypothesis_plugins():
+    global _PLUGINS
+    cfg = load_config()
+    role = cfg.get("pool", {}).get("role", "standalone")
+    if role != "master":
+        return
+        
+    try:
+        solved_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "puzzles_solved.json")
+        metadata = {}
+        if os.path.exists(solved_path):
+            with open(solved_path, "r", encoding="utf-8") as f:
+                metadata = json.load(f)
+                
+        # Importação tardia para evitar dependências circulares
+        from plugins.interval_bias import IntervalBiasPlugin
+        from plugins.bit_density import BitDensityPlugin
+        from plugins.entropy import EntropyPlugin
+        
+        _PLUGINS = [
+            ("IntervalBias", IntervalBiasPlugin(metadata)),
+            ("BitDensity", BitDensityPlugin(metadata)),
+            ("Entropy", EntropyPlugin(metadata))
+        ]
+        print(f"[Pool] Hypothesis Engine ativo. {len(_PLUGINS)} plugins carregados com sucesso!")
+    except Exception as e:
+        print(f"[Pool] Erro ao carregar plugins do Hypothesis Engine: {e}")
+
+
 # ── MAIN ──────────────────────────────────────────────────────────────────────
 def main():
     cfg = load_config()
+    load_hypothesis_plugins()
     PORT = int(cfg.get("api", {}).get("port", 8080))
 
     print("=" * 60)

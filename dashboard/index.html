@@ -1234,7 +1234,7 @@ body {
           <div id="pool-progress-bar" style="width: 0%; height:100%; background:linear-gradient(90deg, var(--cyan-dim), var(--cyan)); transition:width 0.8s ease"></div>
         </div>
 
-        <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; margin-top:20px; border-top:1px solid rgba(255,255,255,0.04); padding-top:16px">
+        <div style="display:grid; grid-template-columns:1fr 1fr 1fr 1.5fr 1.5fr; gap:16px; margin-top:20px; border-top:1px solid rgba(255,255,255,0.04); padding-top:16px">
           <div style="text-align:center">
             <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase">Pendente</div>
             <strong style="font-size:18px; color:var(--text-dim)" id="pool-stat-pending">0</strong>
@@ -1246,6 +1246,14 @@ body {
           <div style="text-align:center">
             <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase">Concluído</div>
             <strong style="font-size:18px; color:var(--green)" id="pool-stat-completed">0</strong>
+          </div>
+          <div style="text-align:center">
+            <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase">Cobertura</div>
+            <strong style="font-size:15px; color:var(--cyan)" id="pool-stat-coverage">0.00000000%</strong>
+          </div>
+          <div style="text-align:center">
+            <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase">Repetição Est.</div>
+            <strong style="font-size:15px; color:var(--orange)" id="pool-stat-repetition">0.00000000%</strong>
           </div>
         </div>
       </div>
@@ -2908,6 +2916,8 @@ function renderPoolDashboard(d) {
   document.getElementById('pool-stat-pending').textContent = pending;
   document.getElementById('pool-stat-processing').textContent = processing;
   document.getElementById('pool-stat-completed').textContent = completed;
+  document.getElementById('pool-stat-coverage').textContent = `${pct}%`;
+  document.getElementById('pool-stat-repetition').textContent = '0.00000000% 🛡️';
   
   const tbody = document.getElementById('pool-workers-tbody');
   const countEl = document.getElementById('pool-workers-count');
@@ -2923,7 +2933,8 @@ function renderPoolDashboard(d) {
   tbody.innerHTML = workers.map(([w_id, w]) => {
     const elapsed = Math.max(0, Math.round(Date.now()/1000 - w.last_active));
     const progressText = (w.progress != null && w.progress > 0) ? ` (${w.progress.toFixed(1)}%)` : '';
-    const blockText = w.block_id != null ? (typeof w.block_id === 'number' ? `#${w.block_id}${progressText}` : `${w.block_id}${progressText}`) : 'Idle';
+    const hypText = w.active_hypothesis ? ` [${w.active_hypothesis}]` : '';
+    const blockText = w.block_id != null ? (typeof w.block_id === 'number' ? `#${w.block_id}${progressText}${hypText}` : `${w.block_id}${progressText}${hypText}`) : 'Idle';
     return `<tr>
       <td><strong>${w_id}</strong></td>
       <td style="color:var(--text-dim);font-size:11px">${w.gpu || '—'}</td>
