@@ -1,0 +1,25 @@
+# Binary executable
+CUDACyclone.exe
+*.exe
+*.obj
+*.lib
+*.exp
+*.pdb
+
+# Local Database
+cyclone.db
+cyclone.db-journal
+
+# Python
+__pycache__/
+*.pyc
+
+# Logs
+*.log
+
+# VS / IDEs
+.vs/
+.vscode/
+.idea/
+build/
+out/

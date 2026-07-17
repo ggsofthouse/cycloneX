@@ -1,0 +1,26 @@
+job:
+  range: "400000000000000000:7fffffffffffffffff"
+  address: "1PWo3JeB9jrGwfHDNpdGK54CRas7fsVzXU"
+  grid: "512,1024"
+  slices: 512
+  random: false
+  gpus: "0"
+
+gpu:
+  max_temp_c: 85
+
+telemetry:
+  interval: 1
+
+api:
+  port: 8080
+  token: "cyclone_token_12345"
+
+database:
+  path: "./cyclone.db"
+
+pool:
+  role: "master"
+  master_url: "http://localhost:8080"
+  block_size_gkeys: 200
+  random_in_block: false
