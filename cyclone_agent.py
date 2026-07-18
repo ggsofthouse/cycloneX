@@ -174,11 +174,11 @@ class PlatformState:
         self.tuner_phase = 0         # índice da fase atual do tuner
         self.tuner_phases = []       # lista de fases com status e resultado
         self.tuner_thread = None
-        # ── Distributed Pool Engine ───────────────────────────────────────────
         self.pool_workers = {}       # worker_id -> { "last_active", "gpu", "speed", "temp", "clock", "block_id", "power_w" }
         self.current_worker_block = None # Usado no modo worker para saber qual bloco está rodando
         self.current_block_progress = 0.0
         self.block_scores = {}
+        self.next_block_buffer = None
 
 state = PlatformState()
 state.gpu_name = "NVIDIA GeForce GPU"  # sera sobrescrito ao parsear output CUDA
@@ -283,6 +283,9 @@ def _run_cuda(custom_job=None):
     gpus_str    = str(job.get("gpus",    "0"))
     random_mode = job.get("random", True)
     job_name    = str(job.get("name", "Puzzle71"))
+    solver_name = str(job.get("solver", "bruteforce"))
+    kangaroo_dp_bits = int(job.get("dp_bits", 20))
+    target_pubkey = str(job.get("target_pubkey", ""))
 
     cmd = [
         CUDA_EXE,
@@ -291,12 +294,19 @@ def _run_cuda(custom_job=None):
         "--grid",    grid_str,
         "--slices",  slices_val,
         "--gpus",    gpus_str,
+        "--solver",  solver_name,
     ]
     if random_mode:
         cmd.append("--random")
+    if target_pubkey:
+        cmd.extend(["--target-pubkey", target_pubkey])
+        cmd.extend(["--dp-bits", str(kangaroo_dp_bits)])
 
     print(f"\n[Agent] Iniciando CUDACyclone.exe")
     print(f"        EXE:     {CUDA_EXE}")
+    print(f"        Solver:  {solver_name}")
+    if target_pubkey:
+        print(f"        Pubkey:  {target_pubkey} | DP Bits: {kangaroo_dp_bits}")
     print(f"        Range:   {range_str}")
     print(f"        Address: {address_str}")
     print(f"        Grid:    {grid_str} | Slices: {slices_val}")
@@ -579,11 +589,13 @@ def _pool_worker_loop():
     token = cfg.get("api", {}).get("token", "cyclone_token_12345")
     
     import urllib.request
+    import threading
     
     print(f"[Worker] Loop do Worker iniciado para '{worker_id}' conectado a {master_url}")
     
-    while True:
-        # 1. Pede range ao Master
+    def fetch_next_block_task():
+        """Funcao executada em background para pre-fetch do proximo bloco."""
+        global state
         req_url = f"{master_url}/api/pool/request-work"
         try:
             req_data = json.dumps({"worker_id": worker_id}).encode('utf-8')
@@ -592,19 +604,56 @@ def _pool_worker_loop():
                 data=req_data,
                 headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"}
             )
-            with urllib.request.urlopen(req, timeout=10) as r:
+            with urllib.request.urlopen(req, timeout=15) as r:
                 resp = json.loads(r.read().decode('utf-8'))
+                with state.lock:
+                    state.next_block_buffer = resp
         except Exception as e:
-            print(f"[Worker] Erro ao conectar ao Master para pedir bloco: {e}")
+            print(f"[Worker Pre-fetch] Erro ao buscar bloco do Master: {e}")
+            with state.lock:
+                state.next_block_buffer = {"status": "error", "error_msg": str(e)}
+
+    def submit_completed_block_task(b_id):
+        """Funcao executada em background para reportar bloco concluido ao Master."""
+        print(f"[Worker Async] Bloco #{b_id} concluido. Relatando ao Master...")
+        try:
+            submit_url = f"{master_url}/api/pool/submit-work"
+            submit_data = json.dumps({"block_id": b_id, "worker_id": worker_id}).encode('utf-8')
+            req = urllib.request.Request(
+                submit_url,
+                data=submit_data,
+                headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"}
+            )
+            with urllib.request.urlopen(req, timeout=10) as r:
+                r.read()
+        except Exception as e:
+            print(f"[Worker Async] Falha ao enviar status de conclusao do bloco #{b_id}: {e}")
+
+    while True:
+        resp = None
+        while True:
+            with state.lock:
+                if state.next_block_buffer is not None:
+                    resp = state.next_block_buffer
+                    state.next_block_buffer = None
+                    break
+            
+            # Se nao tem bloco, faz requisicao sincrona de bootstrap
+            print("[Worker] Buffer vazio. Requisitando bloco de trabalho...")
+            fetch_next_block_task()
+            time.sleep(1)
+            
+        if resp.get("status") == "error":
+            print(f"[Worker] Erro no pre-fetch do Master. Aguardando 10s...")
             time.sleep(10)
             continue
             
         if resp.get("status") == "found":
-            print("[Worker] !!! A busca foi encerrada pois a chave já foi encontrada na Pool !!!")
+            print("[Worker] !!! A busca foi encerrada pois a chave ja foi encontrada na Pool !!!")
             break
             
         if resp.get("status") != "ok" or not resp.get("range"):
-            print("[Worker] Sem blocos disponíveis no Master. Aguardando 15s...")
+            print("[Worker] Sem blocos disponiveis no Master. Aguardando 15s...")
             time.sleep(15)
             continue
             
@@ -614,7 +663,7 @@ def _pool_worker_loop():
         address = resp["address"]
         active_hypothesis = resp.get("active_hypothesis", "Uniform")
         
-        print(f"[Worker] Bloco #{block_id} atribuído ({active_hypothesis}): {start_hex} -> {end_hex}")
+        print(f"[Worker] Bloco #{block_id} atribuido ({active_hypothesis}): {start_hex} -> {end_hex}")
         
         with state.lock:
             state.current_worker_block = {
@@ -624,13 +673,15 @@ def _pool_worker_loop():
                 "address": address,
                 "active_hypothesis": active_hypothesis
             }
+            
+        # Dispara imediatamente o pre-fetch para o proximo bloco em background
+        threading.Thread(target=fetch_next_block_task, daemon=True).start()
         
-        # Monta a configuração do job customizado
+        # Monta a configuracao do job customizado
         job_cfg = cfg.get("job", {})
         pool_cfg = cfg.get("pool", {})
         random_in_block = pool_cfg.get("random_in_block", False)
         
-        # Calcular o limite de chaves para o bloco
         block_size_gkeys = int(pool_cfg.get("block_size_gkeys", 200))
         key_limit = block_size_gkeys * 1_000_000_000
         
@@ -645,13 +696,12 @@ def _pool_worker_loop():
             "name": f"Block_{block_id}"
         }
         
-        # Executa o solver CUDACyclone de forma síncrona nesta thread
+        # Executa o solver CUDACyclone de forma sincrona nesta thread
         _run_cuda(custom_job)
         
         # O solver terminou. Vamos ver se achou a chave
         found_key = None
         with state.lock:
-            # Verifica se algum resultado foi achado durante este run
             for res in state.results_found:
                 if res.get("job") == f"Block_{block_id}":
                     found_key = res
@@ -659,7 +709,6 @@ def _pool_worker_loop():
         
         if found_key:
             print(f"[Worker] !!! CHAVE ENCONTRADA no Bloco #{block_id} !!!")
-            # Envia o achado para o Master
             try:
                 found_url = f"{master_url}/api/pool/found"
                 req_data = json.dumps(found_key).encode('utf-8')
@@ -672,27 +721,15 @@ def _pool_worker_loop():
                     r.read()
             except Exception as e:
                 print(f"[Worker] Falha ao enviar chave encontrada ao Master: {e}")
-            break # Encerra o loop para segurança
+            break
             
         else:
-            # Relata finalização de bloco com sucesso (sem chaves)
-            print(f"[Worker] Bloco #{block_id} concluído. Relatando ao Master...")
-            try:
-                submit_url = f"{master_url}/api/pool/submit-work"
-                submit_data = json.dumps({"block_id": block_id, "worker_id": worker_id}).encode('utf-8')
-                req = urllib.request.Request(
-                    submit_url,
-                    data=submit_data,
-                    headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"}
-                )
-                with urllib.request.urlopen(req, timeout=5) as r:
-                    r.read()
-            except Exception as e:
-                print(f"[Worker] Falha ao enviar status de conclusão do bloco #{block_id}: {e}")
-                time.sleep(5)
-        
+            # Reportar bloco concluido assincronicamente (sem travar a GPU!)
+            threading.Thread(target=submit_completed_block_task, args=(block_id,), daemon=True).start()
+            
         with state.lock:
             state.current_worker_block = None
+
 
 
 def _pool_worker_telemetry_loop():
@@ -724,6 +761,7 @@ def _pool_worker_telemetry_loop():
                 "clock_mhz": state.clock_mhz,
                 "fan_pct": state.fan_pct,
                 "gpu": state.gpu_name,
+                "solver": cfg.get("job", {}).get("solver", "bruteforce"),
                 "timestamp": time.time()
             }
             
@@ -991,6 +1029,16 @@ def _build_telemetry():
         conn.close()
     except Exception:
         pass
+    db_keys_checked = (completed_uniform + completed_hypothesis) * block_size
+    active_keys_checked = 0
+    _now = time.time()
+    for w_id, w in list(state.pool_workers.items()):
+        if _now - w.get("last_active", 0) <= 15.0:
+            progress = w.get("progress", 0.0) / 100.0
+            active_keys_checked += int(progress * block_size)
+    if state.job_running and (state.current_worker_block or state.keys_checked > 0):
+        active_keys_checked += state.keys_checked
+    historical_total_checked = db_keys_checked + active_keys_checked
         
     massa_explorada = (completed_uniform * 1.0) + (completed_hypothesis * 6.5)
     weighted_coverage = (massa_explorada / blocks_total) * 100.0 if blocks_total > 0 else 0.0
@@ -1021,6 +1069,7 @@ def _build_telemetry():
         "exe_path":     CUDA_EXE or "NOT FOUND",
         "is_pool_worker": False,
         "confidence":   state.block_scores.get(state.current_worker_block.get("id") if state.current_worker_block else None, 15) if state.job_running else 0,
+        "solver":       job.get("solver", "bruteforce"),
     }
 
     # -- Workers da Pool (Kaggle / remoto) --
@@ -1052,10 +1101,10 @@ def _build_telemetry():
             "keys_checked":  0,
             "agent_version": "worker",
             "exe_path":      "remote",
-            "is_pool_worker": True,
             "active_hypothesis": w.get("active_hypothesis", ""),
             "block_progress": round(w.get("progress", 0.0), 2),
             "confidence":   w.get("confidence", 15),
+            "solver":       w.get("solver", "bruteforce"),
         })
 
     all_machines = [local_machine] + pool_machines
@@ -1073,7 +1122,7 @@ def _build_telemetry():
                 "target":      str(job.get("address", "")),
                 "priority":    1,
                 "status":      "running" if state.job_running else "queued",
-                "keys_checked": state.keys_checked,
+                "keys_checked": historical_total_checked,
                 "chunks_done":  state.chunks,
             }],
             "history": state.results_found,
@@ -1558,7 +1607,8 @@ class CycloneHandler(BaseHTTPRequestHandler):
                         "block_id": body.get("block_id"),
                         "progress": body.get("progress", 0.0),
                         "active_hypothesis": body.get("active_hypothesis", "Uniform"),
-                        "confidence": state.block_scores.get(body.get("block_id"), 15) if body.get("block_id") else 15
+                        "confidence": state.block_scores.get(body.get("block_id"), 15) if body.get("block_id") else 15,
+                        "solver": body.get("solver", "bruteforce"),
                     }
                 self._json(200, {"status": "ok"})
             else:

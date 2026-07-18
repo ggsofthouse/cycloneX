@@ -2148,8 +2148,9 @@ function buildMachineCard(m) {
       <div class="mc-bar-bg"><div class="mc-bar-fill speed" style="width:${speedPct}%"></div></div>
     </div>
   </div>
-  <div class="mc-footer" style="margin-top:4px">
+  <div class="mc-footer" style="margin-top:4px; display:flex; justify-content:space-between; align-items:center">
     <span class="mc-chunk" title="Chunks processed">${(m.chunks_done||0).toLocaleString()} chunks</span>
+    <span style="font-size:9px; padding: 2px 6px; border-radius: 4px; background: rgba(255,153,32,0.15); color: var(--orange); text-transform: uppercase; font-weight: 700">${m.solver || 'bruteforce'}</span>
   </div>
 </div>`;
 }
@@ -2983,7 +2984,7 @@ function renderPoolDashboard(d) {
       else if (w.confidence > 20) confColor = 'var(--yellow)';
     }
     return `<tr>
-      <td><strong>${w_id}</strong></td>
+      <td><strong>${w_id}</strong> <span style="font-size:9px; background:rgba(255,153,32,0.15); color:var(--orange); padding:1px 4px; border-radius:3px; font-weight:700; text-transform:uppercase">${w.solver || 'bruteforce'}</span></td>
       <td style="color:var(--text-dim);font-size:11px">${w.gpu || '—'}</td>
       <td style="color:var(--cyan)">${w.speed ? w.speed.toFixed(0) + ' MK/s' : '—'}</td>
       <td style="color:var(--orange)">${w.temp ? w.temp + '°C' : '—'}</td>

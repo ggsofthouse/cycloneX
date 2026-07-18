@@ -1,13 +1,16 @@
 job:
   range: "400000000000000000:7fffffffffffffffff"
   address: "1PWo3JeB9jrGwfHDNpdGK54CRas7fsVzXU"
-  grid: "512,1024"
-  slices: 512
+  grid: "256,512"
+  slices: 256
   random: false
   gpus: "0"
+  solver: "bruteforce"          # bruteforce, kangaroo, rho, bsgs
+  dp_bits: 20                  # Bits para Distinguished Points no Kangaroo (ex: 20)
+  target_pubkey: ""            # Chave pública em hexadecimal (para Kangaroo/BSGS)
 
 gpu:
-  max_temp_c: 85
+  max_temp_c: 78
 
 telemetry:
   interval: 1

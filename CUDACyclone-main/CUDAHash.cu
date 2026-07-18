@@ -52,26 +52,24 @@ __device__ __forceinline__ void SHA256Transform(uint32_t state[8], uint32_t W_in
 #pragma unroll
     for (int i = 0; i < 16; ++i) w[i] = W_in[i];
 
-#pragma unroll 64
-    for (int t = 0; t < 64; ++t) {
-        if (t >= 16) {
-            uint32_t s0 = smallS0(w[(t + 1)  & 15]);
-            uint32_t s1 = smallS1(w[(t + 14) & 15]);
-            uint32_t newW = w[t & 15] + s1 + w[(t + 9) & 15] + s0;
-            w[t & 15] = newW;
-        }
-        uint32_t Wt = w[t & 15];
-        uint32_t T1 = h + bigS1(e) + Ch(e, f, g) + K[t] + Wt;
+    // Rounds 0-15: no message schedule needed, words come directly from input
+#pragma unroll 16
+    for (int t = 0; t < 16; ++t) {
+        uint32_t T1 = h + bigS1(e) + Ch(e, f, g) + K[t] + w[t & 15];
         uint32_t T2 = bigS0(a) + Maj(a, b, c);
-
-        h = g;
-        g = f;
-        f = e;
-        e = d + T1;
-        d = c;
-        c = b;
-        b = a;
-        a = T1 + T2;
+        h = g; g = f; f = e; e = d + T1;
+        d = c; c = b; b = a; a = T1 + T2;
+    }
+    // Rounds 16-63: full message schedule expansion
+#pragma unroll 48
+    for (int t = 16; t < 64; ++t) {
+        uint32_t s0 = smallS0(w[(t + 1)  & 15]);
+        uint32_t s1 = smallS1(w[(t + 14) & 15]);
+        w[t & 15] += s1 + w[(t + 9) & 15] + s0;
+        uint32_t T1 = h + bigS1(e) + Ch(e, f, g) + K[t] + w[t & 15];
+        uint32_t T2 = bigS0(a) + Maj(a, b, c);
+        h = g; g = f; f = e; e = d + T1;
+        d = c; c = b; b = a; a = T1 + T2;
     }
 
     state[0] += a; state[1] += b; state[2] += c; state[3] += d;
@@ -321,12 +319,13 @@ __device__ __forceinline__ void getSHA256_33bytes(const uint8_t* pubkey33, uint8
 __device__ __forceinline__ void getRIPEMD160_32bytes(const uint8_t* sha, uint8_t ripemd[20])
 {
     uint8_t block[64] = {0};
-    
+
+#pragma unroll
     for (int i = 0; i < 32; i++) {
     block[i] = sha[i];
-    }  
+    }
     block[32] = 0x80;
-    const uint32_t bitLen = 256;  
+    const uint32_t bitLen = 256;
 
     block[56] = bitLen & 0xFF;
     block[57] = (bitLen >> 8) & 0xFF;
@@ -334,7 +333,8 @@ __device__ __forceinline__ void getRIPEMD160_32bytes(const uint8_t* sha, uint8_t
     block[59] = (bitLen >> 24) & 0xFF;
 
     uint32_t W[16];
-    
+
+#pragma unroll
     for (int i = 0; i < 16; i++) {
         W[i] = ((uint32_t)block[4*i+3] << 24) |
                ((uint32_t)block[4*i+2] << 16) |

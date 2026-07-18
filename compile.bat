@@ -32,11 +32,22 @@ if %ERRORLEVEL% NEQ 0 (
 )
 nvcc --version | findstr /i "release"
 
-echo [3/3] Compiling CUDACyclone.cu real GPU solver...
+echo [3/3] Compilando CUDACyclone.cu com flags otimizadas para T4 e GPUs modernas...
 cd CUDACyclone-main
 
-rem Adicionado -rdc=true para habilitar relocatable device code e resolver chamadas de kernel cruzadas
-nvcc -O3 -std=c++17 -rdc=true -o CUDACyclone.exe CUDACyclone.cu CUDAHash.cu -lversion
+rem Flags adicionadas:
+rem   --use_fast_math     : melhor scheduling de instrucoes (seguro para codigo inteiro)
+rem   -Xptxas -O3         : otimizador PTX nivel 3
+rem   -gencode sm_75      : Tesla T4 (Kaggle/Colab) - evita JIT na primeira execucao
+rem   -gencode sm_86      : RTX 30xx (Ampere)
+rem   -gencode sm_89      : RTX 40xx (Ada Lovelace)
+nvcc -O3 -std=c++17 -rdc=true ^
+  --use_fast_math ^
+  -Xptxas -O3 ^
+  -gencode arch=compute_75,code=sm_75 ^
+  -gencode arch=compute_86,code=sm_86 ^
+  -gencode arch=compute_89,code=sm_89 ^
+  -o CUDACyclone.exe CUDACyclone.cu CUDAHash.cu -lversion
 
 if %ERRORLEVEL% NEQ 0 (
     echo [ERROR] nvcc compilation failed!

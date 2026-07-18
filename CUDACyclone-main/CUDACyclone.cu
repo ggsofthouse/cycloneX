@@ -19,6 +19,13 @@
 #include <array>
 #include <random>
 
+#include "ISolver.hpp"
+#include "BruteforceSolver.h"
+#include "KangarooSolver.h"
+#include "RhoSolver.h"
+#include "BsgsSolver.h"
+#include <memory>
+
 #include "CUDAMath.h"
 #include "sha256.h"
 #include "CUDAHash.cuh"
@@ -806,7 +813,7 @@ static void run_on_gpu(
             if (qs == cudaSuccess)           break;
             if (qs != cudaErrorNotReady) { cudaGetLastError(); stop_all = true; break; }
 
-            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
 
         cudaStreamSynchronize(streamKernel);
@@ -870,178 +877,281 @@ static void run_on_gpu(
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
-int main(int argc, char** argv) {
-    std::signal(SIGINT, handle_sigint);
 
-    std::string target_hash_hex, range_hex, address_b58;
-    uint32_t runtime_points_batch_size = 128;
-    uint32_t runtime_batches_per_sm    = 8;
-    uint32_t slices_per_launch         = 64;
-    bool     random_mode               = false;
+namespace cyclone {
 
-    auto parse_grid = [](const std::string& s, uint32_t& a_out, uint32_t& b_out)->bool {
-        size_t comma = s.find(',');
-        if (comma == std::string::npos) return false;
-        auto trim = [](std::string& z){
-            size_t p1 = z.find_first_not_of(" \t");
-            size_t p2 = z.find_last_not_of(" \t");
-            if (p1 == std::string::npos) { z.clear(); return; }
-            z = z.substr(p1, p2 - p1 + 1);
-        };
-        std::string a_str = s.substr(0, comma);
-        std::string b_str = s.substr(comma + 1);
-        trim(a_str); trim(b_str);
-        if (a_str.empty() || b_str.empty()) return false;
-        char* endp=nullptr;
-        unsigned long aa = std::strtoul(a_str.c_str(), &endp, 10); if (*endp) return false;
-        endp=nullptr;
-        unsigned long bb = std::strtoul(b_str.c_str(), &endp, 10); if (*endp) return false;
-        if (aa == 0ul || bb == 0ul) return false;
-        if (aa > (1ul<<20) || bb > (1ul<<20)) return false;
-        a_out=(uint32_t)aa; b_out=(uint32_t)bb; return true;
+static double benchmark_config(
+    int dev,
+    uint32_t batch_size,
+    uint32_t batches_per_sm,
+    uint32_t slices
+) {
+    cudaSetDevice(dev);
+    
+    cudaDeviceProp prop{};
+    if (cudaGetDeviceProperties(&prop, dev) != cudaSuccess) return 0.0;
+    
+    int threadsPerBlock = 256;
+    uint64_t threadsTotal = (uint64_t)prop.multiProcessorCount * (uint64_t)batches_per_sm * (uint64_t)threadsPerBlock;
+    if (threadsTotal == 0) return 0.0;
+    
+    uint64_t *d_start_scalars=nullptr, *d_Px=nullptr, *d_Py=nullptr, *d_Rx=nullptr, *d_Ry=nullptr, *d_counts256=nullptr;
+    int *d_found_flag=nullptr;
+    FoundResult *d_found_result=nullptr;
+    unsigned long long *d_hashes_accum=nullptr;
+    unsigned int *d_any_left=nullptr;
+    
+    if (cudaMalloc(&d_start_scalars, threadsTotal * 4 * sizeof(uint64_t)) != cudaSuccess) return 0.0;
+    cudaMalloc(&d_Px,            threadsTotal * 4 * sizeof(uint64_t));
+    cudaMalloc(&d_Py,            threadsTotal * 4 * sizeof(uint64_t));
+    cudaMalloc(&d_Rx,            threadsTotal * 4 * sizeof(uint64_t));
+    cudaMalloc(&d_Ry,            threadsTotal * 4 * sizeof(uint64_t));
+    cudaMalloc(&d_counts256,     threadsTotal * 4 * sizeof(uint64_t));
+    cudaMalloc(&d_found_flag,    sizeof(int));
+    cudaMalloc(&d_found_result,  sizeof(FoundResult));
+    cudaMalloc(&d_hashes_accum,  sizeof(unsigned long long));
+    cudaMalloc(&d_any_left,      sizeof(unsigned int));
+    
+    unsigned long long zero64 = 0ull;
+    int zero = 0;
+    cudaMemcpy(d_hashes_accum, &zero64, sizeof(unsigned long long), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_found_flag, &zero, sizeof(int), cudaMemcpyHostToDevice);
+    
+    std::vector<uint64_t> h_temp(threadsTotal * 4, 1ULL);
+    cudaMemcpy(d_start_scalars, h_temp.data(), threadsTotal * 4 * sizeof(uint64_t), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_counts256, h_temp.data(), threadsTotal * 4 * sizeof(uint64_t), cudaMemcpyHostToDevice);
+    
+    int blocks = (int)(threadsTotal / (uint64_t)threadsPerBlock);
+    
+    cudaEvent_t startEvent, stopEvent;
+    cudaEventCreate(&startEvent);
+    cudaEventCreate(&stopEvent);
+    
+    cudaEventRecord(startEvent);
+    
+    for (int loop = 0; loop < 10; ++loop) {
+        kernel_point_add_and_check_oneinv<<<blocks, threadsPerBlock>>>(
+            d_Px, d_Py, d_Rx, d_Ry,
+            d_start_scalars, d_counts256,
+            threadsTotal, batch_size, slices,
+            d_found_flag, d_found_result,
+            d_hashes_accum, d_any_left
+        );
+    }
+    
+    cudaEventRecord(stopEvent);
+    cudaEventSynchronize(stopEvent);
+    
+    float milliseconds = 0;
+    cudaEventElapsedTime(&milliseconds, startEvent, stopEvent);
+    
+    uint64_t total_keys = threadsTotal * batch_size * slices * 10ULL;
+    double speed_mkeys = 0.0;
+    if (milliseconds > 0.0f) {
+        speed_mkeys = (double)total_keys / (milliseconds * 1000.0);
+    }
+    
+    cudaFree(d_start_scalars); cudaFree(d_Px); cudaFree(d_Py);
+    cudaFree(d_Rx); cudaFree(d_Ry); cudaFree(d_counts256);
+    cudaFree(d_found_flag); cudaFree(d_found_result);
+    cudaFree(d_hashes_accum); cudaFree(d_any_left);
+    cudaEventDestroy(startEvent);
+    cudaEventDestroy(stopEvent);
+    
+    return speed_mkeys;
+}
+
+// ── Auto-Tuner cache helpers ───────────────────────────────────────────────
+static std::string get_gpu_uuid(int dev) {
+    cudaDeviceProp prop{};
+    if (cudaGetDeviceProperties(&prop, dev) != cudaSuccess) return "unknown";
+    // Use name + totalGlobalMem as a stable key (UUID not always available via runtime)
+    return std::string(prop.name) + "_" + std::to_string(prop.totalGlobalMem);
+}
+
+static std::string tuner_cache_path() {
+    // Store beside the executable
+    return "cyclone_tuner_cache.json";
+}
+
+static bool load_tuner_cache(const std::string& gpu_key,
+                              uint32_t& batch, uint32_t& per_sm, uint32_t& slices) {
+    FILE* f = fopen(tuner_cache_path().c_str(), "r");
+    if (!f) return false;
+    // Minimal JSON parse: look for our key block
+    char buf[4096] = {};
+    size_t n = fread(buf, 1, sizeof(buf)-1, f);
+    fclose(f);
+    std::string s(buf, n);
+    // Find "<gpu_key>":{"batch":X,"per_sm":Y,"slices":Z}
+    size_t pos = s.find("\"" + gpu_key + "\"");
+    if (pos == std::string::npos) return false;
+    size_t b = s.find("\"batch\":", pos);
+    size_t p = s.find("\"per_sm\":", pos);
+    size_t sl = s.find("\"slices\":", pos);
+    if (b == std::string::npos || p == std::string::npos || sl == std::string::npos) return false;
+    batch   = (uint32_t)std::stoul(s.substr(b  + 8));
+    per_sm  = (uint32_t)std::stoul(s.substr(p  + 9));
+    slices  = (uint32_t)std::stoul(s.substr(sl + 9));
+    return true;
+}
+
+static void save_tuner_cache(const std::string& gpu_key,
+                              uint32_t batch, uint32_t per_sm, uint32_t slices) {
+    // Read existing JSON
+    std::string existing;
+    FILE* fr = fopen(tuner_cache_path().c_str(), "r");
+    if (fr) {
+        char buf[65536] = {};
+        size_t n = fread(buf, 1, sizeof(buf)-1, fr);
+        fclose(fr);
+        existing = std::string(buf, n);
+    }
+    // Remove any existing entry for this key
+    if (!existing.empty() && existing.front() == '{') {
+        size_t pos = existing.find("\"" + gpu_key + "\"");
+        if (pos != std::string::npos) {
+            size_t end = existing.find('}', pos);
+            if (end != std::string::npos) {
+                // Remove key+value+trailing comma/space
+                size_t comma_before = (pos > 1 && existing[pos-1] == ',') ? pos-1 : pos;
+                existing.erase(comma_before, end - comma_before + 1);
+            }
+        }
+        // Clean up empty object
+        if (existing == "{}") existing = "";
+    }
+    // Build new entry
+    std::string entry = "\"" + gpu_key + "\":{\"batch\":" + std::to_string(batch)
+                      + ",\"per_sm\":" + std::to_string(per_sm)
+                      + ",\"slices\":" + std::to_string(slices) + "}";
+    std::string json;
+    if (existing.empty() || existing == "{}") {
+        json = "{" + entry + "}";
+    } else {
+        json = existing;
+        // Insert before closing brace
+        size_t close = json.rfind('}');
+        if (close != std::string::npos) {
+            json.insert(close, "," + entry);
+        } else {
+            json = "{" + entry + "}";
+        }
+    }
+    FILE* fw = fopen(tuner_cache_path().c_str(), "w");
+    if (fw) { fwrite(json.c_str(), 1, json.size(), fw); fclose(fw); }
+}
+
+static void run_auto_tuner(int dev, uint32_t &best_batch, uint32_t &best_per_sm, uint32_t &best_slices) {
+    std::string gpu_key = get_gpu_uuid(dev);
+
+    // Try loading from cache first
+    uint32_t cached_batch = 0, cached_per_sm = 0, cached_slices = 0;
+    if (load_tuner_cache(gpu_key, cached_batch, cached_per_sm, cached_slices)) {
+        std::cout << "[Auto-Tuner] GPU " << dev << " usando configuracao em cache: "
+                  << "batch=" << cached_batch << " per_sm=" << cached_per_sm
+                  << " slices=" << cached_slices << std::endl << std::endl;
+        best_batch  = cached_batch;
+        best_per_sm = cached_per_sm;
+        best_slices = cached_slices;
+        return;
+    }
+
+    std::cout << "[Auto-Tuner] Executando analise de performance para GPU " << dev
+              << " (" << gpu_key << ")..." << std::endl;
+
+    struct Config { uint32_t batch; uint32_t per_sm; uint32_t slices; };
+
+    // Covers RTX 2060 (Turing/30SM), T4 (Turing/40SM), RTX 3090/4090 (Ampere/Ada/82-128SM)
+    // Sorted from likely-best to worst to terminate early if first is dominant
+    std::vector<Config> configs = {
+        // T4-optimized candidates (compute 7.5, 40 SMs, 1024 threads/SM max)
+        {256, 8, 128},
+        {256, 4, 128},
+        {256, 12, 64},
+        {256, 16, 64},
+        {128, 16, 128},
+        // Original 4 configs
+        {256, 8,  64},
+        {256, 4,  32},
+        {128, 8,  64},
+        {128, 4,  32},
+        // High-SM cards (A100/H100): more blocks per SM
+        {256, 4, 256},
+        {128, 8, 256},
+        {256, 8, 256},
     };
 
-    for (int i = 1; i < argc; ++i) {
-        std::string arg = argv[i];
-        if (arg == "--help" || arg == "-h") {
-            std::cout << "CUDACyclone v1.4 — GPU Satoshi Puzzle Solver\n"
-                      << "\n"
-                      << "Usage: " << argv[0]
-                      << " --range <start_hex>:<end_hex> --address <base58>\n"
-                      << "       [--grid A,B] [--slices N] [--gpus all|0|0,1] [--random]\n"
-                      << "\n"
-                      << "Required:\n"
-                      << "  --range <start:end>        Search range in hex (e.g. 2000000000:3FFFFFFFFF)\n"
-                      << "  --address <base58>         P2PKH address to search for\n"
-                      << "  --target-hash160 <hex>     Alternative to --address (raw hash160)\n"
-                      << "\n"
-                      << "Options:\n"
-                      << "  --grid <P,T>               Points per batch, threads per block (e.g. 512,256)\n"
-                      << "  --slices <N>                Batches per thread per kernel launch\n"
-                      << "  --gpus <all|0|0,1>         Select which GPUs to use (default: all)\n"
-                      << "  --random                   Lottery mode: random jumps across the range\n"
-                      << "  -h, --help                 Show this help\n"
-                      << "\n"
-                      << "Examples:\n"
-                      << "  ./CUDACyclone --range 200000000:3FFFFFFFF --address 1HBtAp... --grid 128,128\n"
-                      << "  ./CUDACyclone --range 200000000:3FFFFFFFF --address 1HBtAp... --gpus 0,1 --random --slices 16\n"
-                      << "  ./CUDACyclone --range 200000000:3FFFFFFFF --address 1HBtAp... --gpus 0\n"
-                      << "\n"
-                      << "Multi-GPU: auto-detects all CUDA GPUs. Use --gpus to select specific ones.\n"
-                      << "Random mode: each GPU independently jumps to random positions.\n"
-                      << "Proof test: python3 proof.py --range 200000000:3FFFFFFFF --grid 128,128\n";
-            return EXIT_SUCCESS;
-        }
-        if      (arg == "--target-hash160" && i + 1 < argc) target_hash_hex = argv[++i];
-        else if (arg == "--address"        && i + 1 < argc) address_b58     = argv[++i];
-        else if (arg == "--range"          && i + 1 < argc) range_hex       = argv[++i];
-        else if (arg == "--grid"           && i + 1 < argc) {
-            uint32_t a=0,b=0;
-            if (!parse_grid(argv[++i], a, b)) {
-                std::cerr << "Error: --grid expects \"A,B\" (positive integers).\n";
-                return EXIT_FAILURE;
-            }
-            runtime_points_batch_size = a;
-            runtime_batches_per_sm    = b;
-        }
-        else if (arg == "--slices" && i + 1 < argc) {
-            char* endp=nullptr;
-            unsigned long v = std::strtoul(argv[++i], &endp, 10);
-            if (*endp != '\0' || v == 0ul || v > (1ul<<20)) {
-                std::cerr << "Error: --slices must be in 1.." << (1u<<20) << "\n";
-                return EXIT_FAILURE;
-            }
-            slices_per_launch = (uint32_t)v;
-        }
-        else if (arg == "--gpus" && i + 1 < argc) {
-            // parsed after GPU detection — skip the value here
-            ++i;
-        }
-        else if (arg == "--random") {
-            random_mode = true;
+    double best_speed = 0.0;
+    best_batch  = 256;
+    best_per_sm = 8;
+    best_slices = 64;
+
+    for (const auto& c : configs) {
+        if (c.batch > MAX_BATCH_SIZE) continue;
+        double speed = benchmark_config(dev, c.batch, c.per_sm, c.slices);
+        std::cout << "  -> batch=" << c.batch << " per_sm=" << c.per_sm
+                  << " slices=" << c.slices
+                  << " | Speed: " << std::fixed << std::setprecision(2) << speed
+                  << " Mkeys/s" << std::endl;
+        if (speed > best_speed) {
+            best_speed  = speed;
+            best_batch  = c.batch;
+            best_per_sm = c.per_sm;
+            best_slices = c.slices;
         }
     }
 
-    if (range_hex.empty() || (target_hash_hex.empty() && address_b58.empty())) {
-        std::cerr << "Usage: " << argv[0]
-                  << " --range <start_hex>:<end_hex> (--address <base58> | --target-hash160 <hash160_hex>) [--grid A,B] [--slices N] [--gpus all|0|0,1] [--random]\n";
-        return EXIT_FAILURE;
-    }
-    if (!target_hash_hex.empty() && !address_b58.empty()) {
-        std::cerr << "Error: provide either --address or --target-hash160, not both.\n";
-        return EXIT_FAILURE;
-    }
+    std::cout << "[Auto-Tuner] GPU " << dev << " selecionou: "
+              << "batch=" << best_batch << " per_sm=" << best_per_sm
+              << " slices=" << best_slices
+              << " (Speed: " << best_speed << " Mkeys/s)" << std::endl << std::endl;
 
-    size_t colon_pos = range_hex.find(':');
-    if (colon_pos == std::string::npos) { std::cerr << "Error: range format must be start:end\n"; return EXIT_FAILURE; }
-    std::string start_hex = range_hex.substr(0, colon_pos);
-    std::string end_hex   = range_hex.substr(colon_pos + 1);
+    // Persist for future runs
+    save_tuner_cache(gpu_key, best_batch, best_per_sm, best_slices);
+}
 
-    uint64_t range_start[4]{0}, range_end[4]{0};
-    if (!hexToLE64(start_hex, range_start) || !hexToLE64(end_hex, range_end)) {
-        std::cerr << "Error: invalid range hex\n"; return EXIT_FAILURE;
+bool BruteforceSolver::execute() {
+    std::string target_hash_hex, range_hex, address_b58;
+    uint32_t runtime_points_batch_size = m_params.batch_size;
+    uint32_t runtime_batches_per_sm    = m_params.batches_per_sm;
+    uint32_t slices_per_launch         = m_params.slices_per_launch;
+
+    if (m_params.auto_tune) {
+        uint32_t best_batch = 128, best_per_sm = 8, best_slices = 64;
+        run_auto_tuner(0, best_batch, best_per_sm, best_slices);
+        runtime_points_batch_size = best_batch;
+        runtime_batches_per_sm = best_per_sm;
+        slices_per_launch = best_slices;
     }
+    bool     random_mode               = m_params.mode == 1;
+
+    uint64_t range_start[4];
+    uint64_t range_end[4];
+    memcpy(range_start, m_params.range_start, sizeof(range_start));
+    memcpy(range_end, m_params.range_end, sizeof(range_end));
 
     uint8_t target_hash160[20];
-    if (!address_b58.empty()) {
-        if (!decode_p2pkh_address(address_b58, target_hash160)) {
-            std::cerr << "Error: invalid P2PKH address\n"; return EXIT_FAILURE;
-        }
-    } else {
-        if (!hexToHash160(target_hash_hex, target_hash160)) {
-            std::cerr << "Error: invalid target hash160 hex\n"; return EXIT_FAILURE;
-        }
-    }
+    memcpy(target_hash160, m_params.target_hash160, sizeof(target_hash160));
 
     if (runtime_points_batch_size < 2 || (runtime_points_batch_size & 1u)) {
         std::cerr << "Error: batch size must be at least 2 and even.\n";
-        return EXIT_FAILURE;
+        return false;
     }
     if (runtime_points_batch_size > MAX_BATCH_SIZE) {
         std::cerr << "Error: batch size must be <= " << MAX_BATCH_SIZE << " (constant memory limit).\n";
-        return EXIT_FAILURE;
+        return false;
     }
 
     // Detect GPUs
     int num_gpus_avail = 0;
     if (cudaGetDeviceCount(&num_gpus_avail) != cudaSuccess || num_gpus_avail == 0) {
         std::cerr << "No CUDA-capable GPUs found.\n";
-        return EXIT_FAILURE;
+        return false;
     }
 
-    // Parse --gpus flag (user-selected GPU indices)
     std::vector<int> selected_gpus;
-    {
-        // Default: use --gpus value if provided, else "all"
-        std::string gpus_arg = "all";
-        // Scan for --gpus in argv (already parsed earlier, but we check here for simplicity)
-        for (int _i = 1; _i < argc; ++_i) {
-            if (std::string(argv[_i]) == "--gpus" && _i + 1 < argc) {
-                gpus_arg = argv[++_i];
-                break;
-            }
-        }
-        if (gpus_arg == "all") {
-            for (int g = 0; g < num_gpus_avail; ++g) selected_gpus.push_back(g);
-        } else {
-            std::stringstream ss(gpus_arg);
-            std::string tok;
-            while (std::getline(ss, tok, ',')) {
-                char* endp = nullptr;
-                unsigned long idx = std::strtoul(tok.c_str(), &endp, 10);
-                if (*endp != '\0' || idx >= (unsigned long)num_gpus_avail) {
-                    std::cerr << "Error: invalid GPU index '" << tok
-                              << "'. Available GPUs: 0.." << (num_gpus_avail - 1) << "\n";
-                    return EXIT_FAILURE;
-                }
-                selected_gpus.push_back((int)idx);
-            }
-            if (selected_gpus.empty()) {
-                std::cerr << "Error: --gpus must be 'all' or a comma-separated list of GPU indices.\n";
-                return EXIT_FAILURE;
-            }
-        }
-    }
+    for (int g = 0; g < num_gpus_avail; ++g) selected_gpus.push_back(g);
     int num_gpus = (int)selected_gpus.size();
 
     // Full range length (for progress display)
@@ -1049,8 +1159,6 @@ int main(int argc, char** argv) {
     sub256(range_end, range_start, range_len);
     add256_u64(range_len, 1ull, range_len);
 
-    // In random mode every GPU searches the full range independently.
-    // In sequential mode split evenly across GPUs.
     std::vector<std::array<uint64_t,4>> gpu_starts(num_gpus), gpu_ends(num_gpus);
     if (random_mode) {
         for (int gi = 0; gi < num_gpus; ++gi) {
@@ -1058,25 +1166,25 @@ int main(int argc, char** argv) {
             gpu_ends[gi]   = { range_end[0],   range_end[1],   range_end[2],   range_end[3]   };
         }
     } else {
-    uint64_t per_gpu_len[4]; uint64_t r_gpu = 0ull;
-    divmod_256_by_u64(range_len, (uint64_t)num_gpus, per_gpu_len, r_gpu);
+        uint64_t per_gpu_len[4]; uint64_t r_gpu = 0ull;
+        divmod_256_by_u64(range_len, (uint64_t)num_gpus, per_gpu_len, r_gpu);
 
-    {
-        uint64_t cur[4] = { range_start[0], range_start[1], range_start[2], range_start[3] };
-        for (int gi = 0; gi < num_gpus; ++gi) {
-            gpu_starts[gi] = { cur[0], cur[1], cur[2], cur[3] };
-            if (gi == num_gpus - 1) {
-                gpu_ends[gi] = { range_end[0], range_end[1], range_end[2], range_end[3] };
-            } else {
-                uint64_t next[4]; add256(cur, per_gpu_len, next);
-                uint64_t one[4] = {1,0,0,0};
-                uint64_t end[4]; sub256(next, one, end);
-                gpu_ends[gi] = { end[0], end[1], end[2], end[3] };
-                cur[0]=next[0]; cur[1]=next[1]; cur[2]=next[2]; cur[3]=next[3];
+        {
+            uint64_t cur[4] = { range_start[0], range_start[1], range_start[2], range_start[3] };
+            for (int gi = 0; gi < num_gpus; ++gi) {
+                gpu_starts[gi] = { cur[0], cur[1], cur[2], cur[3] };
+                if (gi == num_gpus - 1) {
+                    gpu_ends[gi] = { range_end[0], range_end[1], range_end[2], range_end[3] };
+                } else {
+                    uint64_t next[4]; add256(cur, per_gpu_len, next);
+                    uint64_t one[4] = {1,0,0,0};
+                    uint64_t end[4]; sub256(next, one, end);
+                    gpu_ends[gi] = { end[0], end[1], end[2], end[3] };
+                    cur[0]=next[0]; cur[1]=next[1]; cur[2]=next[2]; cur[3]=next[3];
+                }
             }
         }
     }
-    } // end else (sequential range split)
 
     std::cout << "======== PrePhase: GPU Information (" << num_gpus
               << " GPU" << (num_gpus > 1 ? "s" : "") << ") ===\n";
@@ -1111,21 +1219,11 @@ int main(int argc, char** argv) {
     // Wait for all GPUs to finish init before starting display
     while (shared.init_done.load(std::memory_order_acquire) < num_gpus) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        if (g_sigint) break;
+        if (g_sigint || m_stop_requested) break;
     }
 
     std::cout << "\n======== Phase-1: " << (random_mode ? "Lottery / Random Jump" : "BruteForce") << " ("
               << num_gpus << " GPU" << (num_gpus > 1 ? "s" : "") << ") =====\n";
-    if (random_mode) {
-        uint64_t ck = (uint64_t)runtime_points_batch_size * slices_per_launch;
-        std::string ck_s;
-        if      (ck >= 1000000000ULL) ck_s = std::to_string(ck/1000000000ULL) + "G";
-        else if (ck >= 1000000ULL)    ck_s = std::to_string(ck/1000000ULL)    + "M";
-        else if (ck >= 1000ULL)       ck_s = std::to_string(ck/1000ULL)       + "K";
-        else                          ck_s = std::to_string(ck);
-        std::cout << "(random mode: ~" << ck_s
-                  << " keys/thread per chunk; lower --slices = more frequent jumps)\n";
-    }
     std::cout.flush();
 
     auto t0    = std::chrono::high_resolution_clock::now();
@@ -1152,6 +1250,10 @@ int main(int argc, char** argv) {
             if (speed_val >= 1000000.0) { speed_val /= 1000000.0; speed_unit = "Tkeys/s"; }
             else if (speed_val >= 1000.0) { speed_val /= 1000.0;  speed_unit = "Gkeys/s"; }
 
+            m_keys_checked = h_hashes;
+            m_speed_mkeys = mkeys;
+            m_elapsed_seconds = elapsed;
+
             if (random_mode) {
                 unsigned long long chunks = shared.chunks_tried.load(std::memory_order_relaxed);
                 std::cout << "\rTime: " << std::fixed << std::setprecision(1) << std::setw(6) << elapsed
@@ -1168,29 +1270,219 @@ int main(int argc, char** argv) {
             lastHashes = h_hashes; tLast = now;
         }
 
-        if (g_sigint) break;
+        if (g_sigint || m_stop_requested) {
+            g_sigint = 1;
+            break;
+        }
     }
 
     for (auto& t : gpu_threads) t.join();
 
     std::cout << "\n";
 
-    int exit_code = EXIT_SUCCESS;
-
     if (shared.has_result) {
-        std::cout << "\n======== FOUND MATCH! =================================\n";
-        std::cout << "Private Key   : " << formatHex256(shared.best_result.scalar) << "\n";
-        std::cout << "Public Key    : " << formatCompressedPubHex(shared.best_result.Rx, shared.best_result.Ry) << "\n";
-    } else if (g_sigint) {
-        std::cout << "======== INTERRUPTED (Ctrl+C) ==========================\n";
-        std::cout << "Search was interrupted by user. Partial progress above.\n";
-        exit_code = 130;
-    } else if (shared.gpus_exhausted.load() >= num_gpus) {
-        std::cout << "======== KEY NOT FOUND (exhaustive) ===================\n";
-        std::cout << "Target hash160 was not found within the specified range.\n";
-    } else {
-        std::cout << "======== TERMINATED ===================================\n";
+        for (int i = 0; i < 4; ++i) m_found_private_key[i] = shared.best_result.scalar[i];
+        m_found = true;
+        return true;
     }
 
-    return exit_code;
+    return false;
+}
+
+bool BruteforceSolver::save_checkpoint(const std::string& path) { return true; }
+bool BruteforceSolver::load_checkpoint(const std::string& path) { return true; }
+
+SolverStats BruteforceSolver::statistics() const {
+    SolverStats stats;
+    stats.keys_checked = m_keys_checked;
+    stats.speed_mkeys = m_speed_mkeys;
+    stats.elapsed_seconds = m_elapsed_seconds;
+    stats.found = m_found;
+    for (int i = 0; i < 4; ++i) stats.found_private_key[i] = m_found_private_key[i];
+    stats.current_state_description = "Exhaustive brute force search";
+    return stats;
+}
+
+void BruteforceSolver::request_stop() {
+    m_stop_requested = true;
+}
+
+} // namespace cyclone
+
+namespace cyclone {
+
+BruteforceSolver::BruteforceSolver() {}
+BruteforceSolver::~BruteforceSolver() {}
+
+bool BruteforceSolver::initialize(const SolverJobParams& params) {
+    m_params = params;
+    m_stop_requested = false;
+    m_keys_checked = 0;
+    m_found = false;
+    return true;
+}
+
+} // namespace cyclone
+
+#include "KangarooSolver.cu"
+#include "RhoSolver.cu"
+#include "BsgsSolver.cu"
+
+int main(int argc, char** argv) {
+    std::signal(SIGINT, handle_sigint);
+
+    std::string target_hash_hex, range_hex, address_b58;
+    uint32_t runtime_points_batch_size = 128;
+    uint32_t runtime_batches_per_sm    = 8;
+    uint32_t slices_per_launch         = 64;
+    bool     random_mode               = false;
+    std::string solver_name            = "bruteforce";
+    int kangaroo_dp_bits               = 20;
+    std::string target_pubkey_hex;
+    bool     grid_passed               = false;
+    bool     slices_passed             = false;
+
+    auto parse_grid = [](const std::string& s, uint32_t& a_out, uint32_t& b_out)->bool {
+        size_t comma = s.find(',');
+        if (comma == std::string::npos) return false;
+        auto trim = [](std::string& z){
+            size_t p1 = z.find_first_not_of(" \t");
+            size_t p2 = z.find_last_not_of(" \t");
+            if (p1 == std::string::npos) { z.clear(); return; }
+            z = z.substr(p1, p2 - p1 + 1);
+        };
+        std::string a_str = s.substr(0, comma);
+        std::string b_str = s.substr(comma + 1);
+        trim(a_str); trim(b_str);
+        if (a_str.empty() || b_str.empty()) return false;
+        char* endp=nullptr;
+        unsigned long aa = std::strtoul(a_str.c_str(), &endp, 10); if (*endp) return false;
+        endp=nullptr;
+        unsigned long bb = std::strtoul(b_str.c_str(), &endp, 10); if (*endp) return false;
+        if (aa == 0ul || bb == 0ul) return false;
+        if (aa > (1ul<<20) || bb > (1ul<<20)) return false;
+        a_out=(uint32_t)aa; b_out=(uint32_t)bb; return true;
+    };
+
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "--help" || arg == "-h") {
+            std::cout << "CycloneX v4.1 — GPU Discrete Logarithm Platform\n"
+                      << "\n"
+                      << "Usage: " << argv[0]
+                      << " --range <start_hex>:<end_hex> --address <base58> [--solver <kangaroo|rho|bsgs|bruteforce>]\n"
+                      << "       [--grid A,B] [--slices N] [--gpus all|0|0,1] [--random] [--target-pubkey <hex>] [--dp-bits <N>]\n";
+            return EXIT_SUCCESS;
+        }
+        if      (arg == "--target-hash160" && i + 1 < argc) target_hash_hex = argv[++i];
+        else if (arg == "--address"        && i + 1 < argc) address_b58     = argv[++i];
+        else if (arg == "--range"          && i + 1 < argc) range_hex       = argv[++i];
+        else if (arg == "--solver"         && i + 1 < argc) solver_name     = argv[++i];
+        else if (arg == "--dp-bits"        && i + 1 < argc) kangaroo_dp_bits = std::stoi(argv[++i]);
+        else if (arg == "--target-pubkey"  && i + 1 < argc) target_pubkey_hex = argv[++i];
+        else if (arg == "--grid"           && i + 1 < argc) {
+            uint32_t a=0,b=0;
+            if (!parse_grid(argv[++i], a, b)) {
+                std::cerr << "Error: --grid expects \"A,B\" (positive integers).\n";
+                return EXIT_FAILURE;
+            }
+            runtime_points_batch_size = a;
+            runtime_batches_per_sm    = b;
+            grid_passed = true;
+        }
+        else if (arg == "--slices" && i + 1 < argc) {
+            char* endp=nullptr;
+            unsigned long v = std::strtoul(argv[++i], &endp, 10);
+            if (*endp != '\0' || v == 0ul || v > (1ul<<20)) {
+                std::cerr << "Error: --slices must be in 1.." << (1u<<20) << "\n";
+                return EXIT_FAILURE;
+            }
+            slices_per_launch = (uint32_t)v;
+            slices_passed = true;
+        }
+        else if (arg == "--random") {
+            random_mode = true;
+        }
+    }
+
+    if (range_hex.empty() || (target_hash_hex.empty() && address_b58.empty())) {
+        std::cerr << "Usage: " << argv[0]
+                  << " --range <start_hex>:<end_hex> (--address <base58> | --target-hash160 <hash160_hex>) [--solver <bruteforce|kangaroo>]\n";
+        return EXIT_FAILURE;
+    }
+
+    size_t colon_pos = range_hex.find(':');
+    if (colon_pos == std::string::npos) { std::cerr << "Error: range format must be start:end\n"; return EXIT_FAILURE; }
+    std::string start_hex = range_hex.substr(0, colon_pos);
+    std::string end_hex   = range_hex.substr(colon_pos + 1);
+
+    uint64_t range_start[4]{0}, range_end[4]{0};
+    if (!hexToLE64(start_hex, range_start) || !hexToLE64(end_hex, range_end)) {
+        std::cerr << "Error: invalid range hex\n"; return EXIT_FAILURE;
+    }
+
+    uint8_t target_hash160[20]{0};
+    if (!address_b58.empty()) {
+        if (!decode_p2pkh_address(address_b58, target_hash160)) {
+            std::cerr << "Error: invalid P2PKH address\n"; return EXIT_FAILURE;
+        }
+    } else {
+        if (!hexToHash160(target_hash_hex, target_hash160)) {
+            std::cerr << "Error: invalid target hash160 hex\n"; return EXIT_FAILURE;
+        }
+    }
+
+    // Configurar parâmetros do solver
+    cyclone::SolverJobParams params{};
+    strcpy_s(params.id, "Puzzle71");
+    strcpy_s(params.plugin, "bitcoin");
+    params.mode = random_mode ? 1 : 0;
+    memcpy(params.range_start, range_start, sizeof(range_start));
+    memcpy(params.range_end, range_end, sizeof(range_end));
+    memcpy(params.target_hash160, target_hash160, sizeof(target_hash160));
+    params.batch_size = runtime_points_batch_size;
+    params.batches_per_sm = runtime_batches_per_sm;
+    params.slices_per_launch = slices_per_launch;
+    params.solver_name = solver_name;
+    params.kangaroo_dp_bits = kangaroo_dp_bits;
+    params.auto_tune = (!grid_passed && !slices_passed);
+
+    if (!target_pubkey_hex.empty()) {
+        params.target_pubkey_len = (int)target_pubkey_hex.size();
+        memcpy(params.target_pubkey, target_pubkey_hex.c_str(), std::min((size_t)128, target_pubkey_hex.size()));
+    } else {
+        params.target_pubkey_len = 0;
+    }
+
+    // Instanciar solver polimórfico
+    std::unique_ptr<cyclone::ISolver> solver;
+    if (solver_name == "kangaroo") {
+        solver = std::make_unique<cyclone::KangarooSolver>();
+    } else if (solver_name == "rho") {
+        solver = std::make_unique<cyclone::RhoSolver>();
+    } else if (solver_name == "bsgs") {
+        solver = std::make_unique<cyclone::BsgsSolver>();
+    } else {
+        solver = std::make_unique<cyclone::BruteforceSolver>();
+    }
+
+    if (!solver->initialize(params)) {
+        std::cerr << "Error: failed to initialize solver '" << solver_name << "'\n";
+        return EXIT_FAILURE;
+    }
+
+    bool found = solver->execute();
+    auto stats = solver->statistics();
+
+    if (found) {
+        std::cout << "\n======== FOUND MATCH! =================================\n";
+        std::cout << "Private Key   : " << formatHex256(stats.found_private_key) << "\n";
+        return EXIT_SUCCESS;
+    } else if (g_sigint) {
+        std::cout << "======== INTERRUPTED (Ctrl+C) ==========================\n";
+        return 130;
+    } else {
+        std::cout << "======== KEY NOT FOUND ================================\n";
+        return EXIT_FAILURE;
+    }
 }
