@@ -64,5 +64,5 @@
     "8": 0.012195121951219513,
     "0": 0.001
   },
-  "notes": "Metadados gerados estritamente com base no dataset real fornecido em puzzles_solved_clean.json."
+  "notes": "Metadados de auditoria gerados estritamente com base no dataset real e verificado de 82 puzzles do Bitcoin Puzzle (Puzzles 1-70, 75-130)."
 }
