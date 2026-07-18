@@ -1,57 +1,55 @@
-# Relatório Científico de Análise de Puzzles — CycloneX v4.1
+# Relatório de Auditoria e Validação Estatística de Famílias — CycloneX v5.0
 
-Análise detalhada feita sob as 82 chaves reais publicadas no banco oficial.
+Este documento descreve os testes de hipótese rigorosos aplicados sobre a teoria de agrupamento em famílias (Modulação) usando os dados reais das 82 chaves públicas de Bitcoin Puzzles resolvidas.
 
-## 📊 Estatísticas Gerais do Dataset Real
-- **Média de Offset Global:** 50.15% (Desvio Padrão: 26.96%)
-- **Média de Densidade de Bits (Popcount):** 51.62% (Desvio Padrão: 12.91%)
-- **Média de Entropia de Shannon:** 0.660 (Desvio Padrão: 0.231)
+## 🔬 1. Teste de Significância de Modulação (Mod 2 a Mod 16)
+Se o criador dos puzzles usou um agrupamento em passos regulares, a modulação correta deve apresentar um desvio padrão médio de famílias substancialmente menor do que as modulações incorretas (ruído).
 
-## 👥 Análise por Família Modulo 5 (Normalizada)
+- **Desvio Padrão Global do Offset:** 42.23%
 
-### Família Mod 0 (Puzzles terminados em 0 ou 5)
-Membros resolvidos: **26**
-- **Posicionamento médio no range (Offset):** 50.92% (Desvio Padrão: 28.56%)
-- **Distância de Hamming Média Normalizada:** 34.6 bits alterados
+| Modulação (Passo) | Desvio Padrão Médio das Famílias | Efeito de Clusterização (Redução de Desvio) |
+| :--- | :--- | :--- |
+| Mod 2 | 42.09% | 0.14% |
+| Mod 3 | 41.97% | 0.26% |
+| Mod 4 | 41.44% | 0.80% |
+| Mod 5 | 42.62% | -0.38% |
+| Mod 6 | 41.17% | 1.06% |
+| Mod 7 | 39.74% | 2.50% |
+| Mod 8 | 38.78% | 3.45% |
+| Mod 9 | 39.55% | 2.68% |
+| Mod 10 | 38.70% | 3.53% |
+| Mod 11 | 37.62% | 4.61% |
+| Mod 12 | 36.52% | 5.71% |
+| Mod 13 | 35.06% | 7.17% |
+| Mod 14 | 35.51% | 6.73% |
+| Mod 15 | 36.60% | 5.63% |
+| Mod 16 | 34.79% | 7.45% |
 
-### Família Mod 1 (Puzzles terminados em 1 ou 6)
-Membros resolvidos: **14**
-- **Posicionamento médio no range (Offset):** 43.66% (Desvio Padrão: 27.12%)
-- **Distância de Hamming Média Normalizada:** 16.8 bits alterados
+**Análise do Teste de Modulação:**
+- O melhor fator de agrupamento estatístico observado é o **Mod 16** (Redução de desvio de 7.45%).
+- O agrupamento **Mod 5** (finais 0/5) obteve uma redução de desvio de **-0.38%**.
 
-### Família Mod 2 (Puzzles terminados em 2 ou 7)
-Membros resolvidos: **14**
-- **Posicionamento médio no range (Offset):** 55.45% (Desvio Padrão: 21.48%)
-- **Distância de Hamming Média Normalizada:** 18.7 bits alterados
+## 🧪 2. Teste Cego Leave-One-Out (Capacidade Preditiva)
+Testamos a capacidade do modelo estatístico Modulo 5 de 'prever' a localização de uma chave oculta:
+- **Total de testes executados:** 62
+- **Acertos dentro do Top 25% do range:** 53/62 (85.5%)
+- **Acertos dentro do Top 10% do range:** 17/62 (27.4%)
 
-### Família Mod 3 (Puzzles terminados em 3 ou 8)
-Membros resolvidos: **14**
-- **Posicionamento médio no range (Offset):** 53.03% (Desvio Padrão: 22.53%)
-- **Distância de Hamming Média Normalizada:** 17.8 bits alterados
+*Nota: Em chaves puramente aleatórias, a taxa de acerto esperada no Top 25% seria de 25.0% e no Top 10% seria de 10.0%.*
 
-### Família Mod 4 (Puzzles terminados em 4 ou 9)
-Membros resolvidos: **14**
-- **Posicionamento médio no range (Offset):** 47.01% (Desvio Padrão: 30.83%)
-- **Distância de Hamming Média Normalizada:** 18.9 bits alterados
+## 🎲 3. Teste de Hipótese contra Aleatoriedade (Monte Carlo)
+Rodamos 1.000 simulações de conjuntos de chaves puramente aleatórios dentro dos mesmos limites de bits e calculamos a probabilidade de obter um efeito de agrupamento similar ao observado:
+- **P-value (Efeito de Clusterização >= Real):** 0.9950
+- **P-value (Desvio Padrão de Família <= Real):** 1.0000
 
-## 🔬 Teste de Validação Leave-One-Out (Família Mod 1)
-Simulamos a eficácia do modelo estatístico tentando prever cada puzzle resolvido da família Mod 1 (como se ele fosse oculto):
+**Conclusão do Teste de Hipótese:**
+> ⚠️ **HIPÓTESE DE FAMÍLIA NÃO DEMONSTRADA (P-value > 0.05):**
+> O padrão observado de agrupamento Modulo 5 (P-value: 0.9950) é estatisticamente comum em dados puramente aleatórios. Ele ocorre em **99.5%** dos conjuntos gerados de forma randômica. Portanto, **não podemos rejeitar a hipótese nula** de que os puzzles são independentes e aleatórios dentro de seus ranges.
 
-| Puzzle Oculto | Offset Real | Média dos Outros | Desvio dos Outros | Top 10% Match? | Top 25% Match? |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| #11 | 12.79% | 46.03% | 26.70% | ❌ Não | ✅ Sim |
-| #16 | 57.20% | 42.62% | 27.87% | ❌ Não | ✅ Sim |
-| #21 | 72.78% | 41.42% | 26.86% | ❌ Não | ✅ Sim |
-| #26 | 62.54% | 42.21% | 27.61% | ❌ Não | ✅ Sim |
-| #31 | 95.80% | 39.65% | 23.80% | ❌ Não | ❌ Não |
-| #36 | 23.36% | 45.22% | 27.53% | ❌ Não | ✅ Sim |
-| #41 | 32.63% | 44.51% | 27.96% | ❌ Não | ✅ Sim |
-| #46 | 46.11% | 43.47% | 28.13% | ✅ Sim | ✅ Sim |
-| #51 | 82.86% | 40.64% | 25.78% | ❌ Não | ❌ Não |
-| #56 | 22.73% | 45.27% | 27.49% | ❌ Não | ✅ Sim |
-| #61 | 23.67% | 45.20% | 27.55% | ❌ Não | ✅ Sim |
-| #66 | 25.62% | 45.05% | 27.66% | ❌ Não | ✅ Sim |
+## 🗝️ 4. A Hipótese Alternativa: Derivação de HD Wallet com Máscara
+A outra IA propôs uma alternativa muito mais simples e robusta para explicar as chaves:
+`key = start + f(seed)` ou `key = HD_Wallet_Derive(seed, i) & mask`
 
-### Resultado da Validação Cruzada:
-- **Top 10% de Confiança:** 1/12 (8.3%)
-- **Top 25% de Confiança (Gaussiano 1.28-Sigma):** 10/12 (83.3%)
+Se as chaves forem derivadas de uma HD Wallet determinística:
+1. **Independência de Passos:** Comparar vizinhos Modulo 5 não terá nenhuma utilidade prática para prever chaves subsequentes, pois a função hash de derivação (SHA256 ou HMAC-SHA512) quebra qualquer linearidade (distância de Hamming ou XOR).
+2. **Offsets Variáveis:** O offset percentual dentro de cada range dependerá exclusivamente de como a máscara foi aplicada. Se a máscara for de bits fixos (ex: pegar apenas os bits menos significativos), a chave ficará espalhada de forma uniforme no range, que é exatamente o que observamos nos dados reais.
