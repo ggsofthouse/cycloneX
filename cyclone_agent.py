@@ -927,34 +927,75 @@ def _fmt_duration(seconds):
 
 
 def _build_telemetry():
-    """Constrói o payload de status completo (deve ser chamado com lock se necessário)."""
+    """Constroi o payload de status completo (deve ser chamado com lock se necessario)."""
     cfg = load_config()
     job = cfg.get("job", {})
+
+    # -- Maquina local (Master / Standalone) --
+    local_machine = {
+        "id":           "cyclonex-node-01",
+        "status":       "online" if state.job_running else "idle",
+        "gpu":          state.gpu_name,
+        "gpu_count":    1,
+        "speed_mkeys":  int(state.speed_mkeys),
+        "temp_c":       state.temp_c,
+        "temp_hotspot": state.temp_hotspot,
+        "power_w":      state.power_w,
+        "power_limit_w": 285,
+        "clock_mhz":    state.clock_mhz,
+        "voltage_mv":   state.voltage_mv,
+        "vram_used":    state.vram_used,
+        "vram_total":   state.vram_total,
+        "fan_pct":      state.fan_pct,
+        "uptime_seconds": state.uptime_sec,
+        "chunks_done":  state.chunks,
+        "job_id":       state.job_name if state.job_running else "",
+        "keys_checked": state.keys_checked,
+        "agent_version": "v2.0.0",
+        "exe_path":     CUDA_EXE or "NOT FOUND",
+        "is_pool_worker": False,
+    }
+
+    # -- Workers da Pool (Kaggle / remoto) --
+    pool_machines = []
+    _now = time.time()
+    for w_id, w in list(state.pool_workers.items()):
+        # Considera ativo se fez telemetria nos ultimos 15s
+        if _now - w.get("last_active", 0) > 15.0:
+            continue
+        block_info = "Block_" + str(w.get("block_id", "?")) if w.get("block_id") else ""
+        pool_machines.append({
+            "id":            w_id,
+            "status":        "online",
+            "gpu":           w.get("gpu", "Unknown GPU"),
+            "gpu_count":     1,
+            "speed_mkeys":   int(w.get("speed", 0)),
+            "temp_c":        int(w.get("temp", 0)),
+            "temp_hotspot":  int(w.get("temp", 0)) + 8,
+            "power_w":       int(w.get("power", 0)),
+            "power_limit_w": 150,
+            "clock_mhz":     int(w.get("clock", 0)),
+            "voltage_mv":    0,
+            "vram_used":     0,
+            "vram_total":    0,
+            "fan_pct":       int(w.get("fan", 0)),
+            "uptime_seconds": 0,
+            "chunks_done":   0,
+            "job_id":        block_info,
+            "keys_checked":  0,
+            "agent_version": "worker",
+            "exe_path":      "remote",
+            "is_pool_worker": True,
+            "active_hypothesis": w.get("active_hypothesis", ""),
+            "block_progress": round(w.get("progress", 0.0), 2),
+        })
+
+    all_machines = [local_machine] + pool_machines
+
     return {
         "type": "full_state",
         "data": {
-            "machines": [{
-                "id":           "cyclonex-node-01",
-                "status":       "online" if state.job_running else "idle",
-                "gpu":          state.gpu_name,
-                "gpu_count":    1,
-                "speed_mkeys":  int(state.speed_mkeys),
-                "temp_c":       state.temp_c,
-                "temp_hotspot": state.temp_hotspot,
-                "power_w":      state.power_w,
-                "power_limit_w": 285,
-                "clock_mhz":    state.clock_mhz,
-                "voltage_mv":   state.voltage_mv,
-                "vram_used":    state.vram_used,
-                "vram_total":   state.vram_total,
-                "fan_pct":      state.fan_pct,
-                "uptime_seconds": state.uptime_sec,
-                "chunks_done":  state.chunks,
-                "job_id":       state.job_name if state.job_running else "",
-                "keys_checked": state.keys_checked,
-                "agent_version": "v2.0.0",
-                "exe_path":     CUDA_EXE or "NOT FOUND",
-            }],
+            "machines": all_machines,
             "jobs": [{
                 "id":          state.job_name,
                 "plugin":      "bitcoin",
@@ -968,10 +1009,9 @@ def _build_telemetry():
                 "chunks_done":  state.chunks,
             }],
             "history": state.results_found,
-            "cuda_log": state.cuda_log[-50:],   # últimas 50 linhas
+            "cuda_log": state.cuda_log[-50:],   # ultimas 50 linhas
         }
     }
-
 
 def start_job():
     if state.job_running:
