@@ -178,6 +178,7 @@ class PlatformState:
         self.pool_workers = {}       # worker_id -> { "last_active", "gpu", "speed", "temp", "clock", "block_id", "power_w" }
         self.current_worker_block = None # Usado no modo worker para saber qual bloco está rodando
         self.current_block_progress = 0.0
+        self.block_scores = {}
 
 state = PlatformState()
 state.gpu_name = "NVIDIA GeForce GPU"  # sera sobrescrito ao parsear output CUDA
@@ -957,6 +958,43 @@ def _fmt_duration(seconds):
 def _build_telemetry():
     """Constroi o payload de status completo (deve ser chamado com lock se necessario)."""
     cfg = load_config()
+    db_path = cfg.get("database", {}).get("path", "./cyclone.db")
+    
+    # Calcular total de blocos da pool
+    pool_cfg = cfg.get("pool", {})
+    block_size_gkeys = int(pool_cfg.get("block_size_gkeys", 200))
+    block_size = block_size_gkeys * 1_000_000_000
+    
+    job_cfg = cfg.get("job", {})
+    range_str = job_cfg.get("range", "400000000000000000:7fffffffffffffffff")
+    blocks_total = 23058430
+    try:
+        parts = range_str.split(':')
+        start_val = int(parts[0].strip(), 16)
+        end_val = int(parts[1].strip(), 16)
+        total_keys = end_val - start_val + 1
+        blocks_total = max(1, total_keys // block_size)
+    except Exception:
+        pass
+        
+    completed_uniform = 0
+    completed_hypothesis = 0
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT active_hypothesis, COUNT(*) FROM pool_ranges WHERE status = 'completed' GROUP BY active_hypothesis")
+        for r in cursor.fetchall():
+            if r[0] == "Hypothesis":
+                completed_hypothesis = r[1]
+            else:
+                completed_uniform = r[1]
+        conn.close()
+    except Exception:
+        pass
+        
+    massa_explorada = (completed_uniform * 1.0) + (completed_hypothesis * 6.5)
+    weighted_coverage = (massa_explorada / blocks_total) * 100.0 if blocks_total > 0 else 0.0
+    weighted_coverage = min(100.0, weighted_coverage)
     job = cfg.get("job", {})
 
     # -- Maquina local (Master / Standalone) --
@@ -982,6 +1020,7 @@ def _build_telemetry():
         "agent_version": "v2.0.0",
         "exe_path":     CUDA_EXE or "NOT FOUND",
         "is_pool_worker": False,
+        "confidence":   state.block_scores.get(state.current_worker_block.get("id") if state.current_worker_block else None, 15) if state.job_running else 0,
     }
 
     # -- Workers da Pool (Kaggle / remoto) --
@@ -1016,6 +1055,7 @@ def _build_telemetry():
             "is_pool_worker": True,
             "active_hypothesis": w.get("active_hypothesis", ""),
             "block_progress": round(w.get("progress", 0.0), 2),
+            "confidence":   w.get("confidence", 15),
         })
 
     all_machines = [local_machine] + pool_machines
@@ -1038,6 +1078,7 @@ def _build_telemetry():
             }],
             "history": state.results_found,
             "cuda_log": state.cuda_log[-50:],   # ultimas 50 linhas
+            "weighted_coverage": round(weighted_coverage, 6),
         }
     }
 
@@ -1171,6 +1212,27 @@ class CycloneHandler(BaseHTTPRequestHandler):
             processing = stats.get("processing", 0)
             pending = max(0, blocks_total - completed - processing)
             
+            # Calcular Cobertura Ponderada (Massa de probabilidade priorizada concluída)
+            completed_uniform = 0
+            completed_hypothesis = 0
+            try:
+                conn = sqlite3.connect(db_path)
+                cursor = conn.cursor()
+                cursor.execute("SELECT active_hypothesis, COUNT(*) FROM pool_ranges WHERE status = 'completed' GROUP BY active_hypothesis")
+                for r in cursor.fetchall():
+                    if r[0] == "Hypothesis":
+                        completed_hypothesis = r[1]
+                    else:
+                        completed_uniform = r[1]
+                conn.close()
+            except Exception:
+                pass
+            
+            # Estimativa de cobertura baseada nos blocos prioritários
+            massa_explorada = (completed_uniform * 1.0) + (completed_hypothesis * 6.5)
+            weighted_coverage = (massa_explorada / blocks_total) * 100.0 if blocks_total > 0 else 0.0
+            weighted_coverage = min(100.0, weighted_coverage)
+            
             with state.lock:
                 workers_copy = {k: dict(v) for k, v in state.pool_workers.items()}
                 now = time.time()
@@ -1184,6 +1246,7 @@ class CycloneHandler(BaseHTTPRequestHandler):
                 "blocks_completed": completed,
                 "blocks_processing": processing,
                 "blocks_pending": pending,
+                "weighted_coverage": round(weighted_coverage, 6),
                 "workers": workers_copy
             })
             return
@@ -1323,6 +1386,7 @@ class CycloneHandler(BaseHTTPRequestHandler):
                         block_id, start_hex, end_hex = row[:3]
                         active_hypothesis = "Resumed"
                         
+                    state.block_scores[block_id] = 85 if active_hypothesis == "Hypothesis" else 15
                     cursor.execute(
                         "UPDATE pool_ranges SET worker_id = ?, updated_at = ? WHERE id = ?",
                         (worker_id, now, block_id)
@@ -1441,6 +1505,7 @@ class CycloneHandler(BaseHTTPRequestHandler):
                             (best_idx, start_hex, end_hex, worker_id, active_hypothesis, now)
                         )
                         block_id = cursor.lastrowid
+                        state.block_scores[block_id] = int(best_score) if active_hypothesis == "Hypothesis" else 15
                         conn.commit()
                         
                         self._json(200, {
@@ -1492,7 +1557,8 @@ class CycloneHandler(BaseHTTPRequestHandler):
                         "fan": body.get("fan_pct", 0),
                         "block_id": body.get("block_id"),
                         "progress": body.get("progress", 0.0),
-                        "active_hypothesis": body.get("active_hypothesis", "Uniform")
+                        "active_hypothesis": body.get("active_hypothesis", "Uniform"),
+                        "confidence": state.block_scores.get(body.get("block_id"), 15) if body.get("block_id") else 15
                     }
                 self._json(200, {"status": "ok"})
             else:

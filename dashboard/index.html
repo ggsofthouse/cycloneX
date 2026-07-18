@@ -932,6 +932,14 @@ body {
       <div class="cov-bar-bg">
         <div class="cov-bar-fill" id="cov-bar-fill"></div>
       </div>
+      
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:12px">
+        <span style="font-size:11px; color:var(--green)">Weighted Progress (Estatístico) ⚡:</span>
+        <span class="cov-bar-fill-pct" id="cov-weighted-pct" style="color:var(--green)">0.000000%</span>
+      </div>
+      <div class="cov-bar-bg" style="background:rgba(0,255,100,0.04)">
+        <div class="cov-bar-fill" id="cov-weighted-bar-fill" style="background:linear-gradient(90deg, rgba(0,255,100,0.3), var(--green)); width:0%"></div>
+      </div>
     </div>
 
     <!-- Rate Estimations Widget -->
@@ -1234,7 +1242,7 @@ body {
           <div id="pool-progress-bar" style="width: 0%; height:100%; background:linear-gradient(90deg, var(--cyan-dim), var(--cyan)); transition:width 0.8s ease"></div>
         </div>
 
-        <div style="display:grid; grid-template-columns:1fr 1fr 1fr 1.5fr 1.5fr; gap:16px; margin-top:20px; border-top:1px solid rgba(255,255,255,0.04); padding-top:16px">
+        <div style="display:grid; grid-template-columns:1fr 1fr 1fr 1.3fr 1.3fr 1.8fr; gap:16px; margin-top:20px; border-top:1px solid rgba(255,255,255,0.04); padding-top:16px">
           <div style="text-align:center">
             <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase">Pendente</div>
             <strong style="font-size:18px; color:var(--text-dim)" id="pool-stat-pending">0</strong>
@@ -1250,6 +1258,10 @@ body {
           <div style="text-align:center">
             <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase">Cobertura</div>
             <strong style="font-size:15px; color:var(--cyan)" id="pool-stat-coverage">0.00000000%</strong>
+          </div>
+          <div style="text-align:center">
+            <div style="font-size:11px; color:var(--green); text-transform:uppercase">Cobertura Ponderada ⚡</div>
+            <strong style="font-size:15px; color:var(--green)" id="pool-stat-weighted-coverage">0.000000%</strong>
           </div>
           <div style="text-align:center">
             <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase">Repetição Est.</div>
@@ -1276,11 +1288,12 @@ body {
               <th>Power</th>
               <th>Clock</th>
               <th>Active Block</th>
+              <th>Confidence 🎯</th>
               <th>Heartbeat</th>
             </tr>
           </thead>
           <tbody id="pool-workers-tbody">
-            <tr><td colspan="8"><div class="empty-state"><div class="empty-icon">👥</div><div>Nenhum worker conectado à Pool ainda</div></div></td></tr>
+            <tr><td colspan="9"><div class="empty-state"><div class="empty-icon">👥</div><div>Nenhum worker conectado à Pool ainda</div></div></td></tr>
           </tbody>
         </table>
       </div>
@@ -1731,6 +1744,17 @@ function updateAdvancedAnalytics(data) {
   const barEl = document.getElementById('cov-bar-fill');
   if (barEl) {
     barEl.style.width = Math.min(100, pct * 100).toFixed(6) + '%';
+  }
+
+  // Preencher Cobertura Ponderada
+  const wPctEl = document.getElementById('cov-weighted-pct');
+  const wBarEl = document.getElementById('cov-weighted-bar-fill');
+  const wCoverage = data.weighted_coverage != null ? data.weighted_coverage : 0.0;
+  if (wPctEl) {
+    wPctEl.textContent = wCoverage.toFixed(6) + '%';
+  }
+  if (wBarEl) {
+    wBarEl.style.width = Math.min(100, wCoverage).toFixed(4) + '%';
   }
 
   // Estimations Widget
@@ -2931,6 +2955,8 @@ function renderPoolDashboard(d) {
   document.getElementById('pool-stat-processing').textContent = processing;
   document.getElementById('pool-stat-completed').textContent = completed;
   document.getElementById('pool-stat-coverage').textContent = `${pct}%`;
+  const wpct = d.weighted_coverage != null ? d.weighted_coverage.toFixed(6) : '0.000000';
+  document.getElementById('pool-stat-weighted-coverage').textContent = `${wpct}%`;
   document.getElementById('pool-stat-repetition').textContent = '0.00000000% 🛡️';
   
   const tbody = document.getElementById('pool-workers-tbody');
@@ -2940,7 +2966,7 @@ function renderPoolDashboard(d) {
   countEl.textContent = `${workers.length} nós`;
   
   if (workers.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">👥</div><div>Nenhum worker conectado à Pool ainda</div></div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">👥</div><div>Nenhum worker conectado à Pool ainda</div></div></td></tr>';
     return;
   }
   
@@ -2949,6 +2975,13 @@ function renderPoolDashboard(d) {
     const progressText = (w.progress != null && w.progress > 0) ? ` (${w.progress.toFixed(1)}%)` : '';
     const hypText = w.active_hypothesis ? ` [${w.active_hypothesis}]` : '';
     const blockText = w.block_id != null ? (typeof w.block_id === 'number' ? `#${w.block_id}${progressText}${hypText}` : `${w.block_id}${progressText}${hypText}`) : 'Idle';
+    const conf = w.confidence != null ? `${w.confidence}%` : '15%';
+    let confColor = 'var(--text-dim)';
+    if (w.confidence != null) {
+      if (w.confidence > 75) confColor = 'var(--green)';
+      else if (w.confidence > 45) confColor = 'var(--cyan)';
+      else if (w.confidence > 20) confColor = 'var(--yellow)';
+    }
     return `<tr>
       <td><strong>${w_id}</strong></td>
       <td style="color:var(--text-dim);font-size:11px">${w.gpu || '—'}</td>
@@ -2957,6 +2990,7 @@ function renderPoolDashboard(d) {
       <td style="color:var(--text-muted)">${w.power ? w.power + ' W' : '—'}</td>
       <td style="color:var(--text-muted)">${w.clock ? w.clock + ' MHz' : '—'}</td>
       <td style="color:var(--cyan)">${blockText}</td>
+      <td style="font-family:var(--font-mono); color:${confColor}"><strong>${conf}</strong></td>
       <td style="color:var(--text-muted)">${elapsed}s atrás</td>
     </tr>`;
   }).join('');
