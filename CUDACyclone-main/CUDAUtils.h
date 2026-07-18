@@ -1,6 +1,10 @@
+#pragma once
 #if defined(_MSC_VER) && !defined(__CUDA_ARCH__)
 #include <intrin.h>
 #endif
+#include <string>
+#include <sstream>
+#include <iomanip>
 
 __host__ __forceinline__ void add256_u64(const uint64_t a[4], uint64_t b, uint64_t out[4]) {
     out[0] = a[0] + b;
@@ -159,7 +163,9 @@ __device__ __forceinline__ unsigned long long warp_reduce_add_ull(unsigned long 
     return v;
 }
 
-static inline std::string human_bytes(double bytes) {
+#ifndef CUDAUTILS_HOST_IMPL
+#define CUDAUTILS_HOST_IMPL
+static std::string human_bytes(double bytes) {
     static const char* u[]={"B","KB","MB","GB","TB","PB"};
     int k=0;
     while(bytes>=1024.0 && k<5){ bytes/=1024.0; ++k; }
@@ -167,11 +173,11 @@ static inline std::string human_bytes(double bytes) {
     return o.str();
 }
 
-static inline long double ld_from_u256(const uint64_t v[4]) {
+static long double ld_from_u256(const uint64_t v[4]) {
     return std::ldexp((long double)v[3],192) + std::ldexp((long double)v[2],128) + std::ldexp((long double)v[1],64) + (long double)v[0];
 }
 
-static inline std::string formatCompressedPubHex(const uint64_t Rx[4], const uint64_t Ry[4]) {
+static std::string formatCompressedPubHex(const uint64_t Rx[4], const uint64_t Ry[4]) {
     uint8_t out[33];
     out[0] = (Ry[0] & 1ULL) ? 0x03 : 0x02;
     int off=1;
@@ -188,5 +194,6 @@ static inline std::string formatCompressedPubHex(const uint64_t Rx[4], const uin
     for (int i=0;i<33;++i){ s[2*i]=hexd[(out[i]>>4)&0xF]; s[2*i+1]=hexd[out[i]&0xF]; }
     return s;
 }
+#endif // CUDAUTILS_HOST_IMPL
 
 

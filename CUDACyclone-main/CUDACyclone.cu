@@ -1434,8 +1434,13 @@ int main(int argc, char** argv) {
 
     // Configurar parâmetros do solver
     cyclone::SolverJobParams params{};
+#ifdef _MSC_VER
     strcpy_s(params.id, "Puzzle71");
     strcpy_s(params.plugin, "bitcoin");
+#else
+    strncpy(params.id, "Puzzle71", sizeof(params.id) - 1);
+    strncpy(params.plugin, "bitcoin", sizeof(params.plugin) - 1);
+#endif
     params.mode = random_mode ? 1 : 0;
     memcpy(params.range_start, range_start, sizeof(range_start));
     memcpy(params.range_end, range_end, sizeof(range_end));
