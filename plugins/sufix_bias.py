@@ -12,15 +12,17 @@ class SufixBiasPlugin(BasePlugin):
             
         last_char = hex_str[-1].lower()
         
-        # Puzzles resolvidos têm grande tendência a terminar com '0' ou '5'
-        # Vamos dar pontuação extra para os blocos cujo ponto médio de chave termine nestes nibbles.
-        if last_char in ('0', '5'):
-            score = 100.0
-        elif last_char in ('a', 'c', 'e', 'f'):
-            # Outros nibbles comuns observados no dataset
-            score = 65.0
-        else:
-            # Nibbles raros ou de ruído
-            score = 35.0
+        # Mapeamento de probabilidade obtido do JSON (laplace-smoothed)
+        sufix_probs = self.metadata.get("sufix_probability", {})
+        
+        # Obter a probabilidade do caractere ou usar um fallback padrão baixo
+        prob = sufix_probs.get(last_char, 0.01)
+        
+        # Encontrar a probabilidade máxima para normalizar a nota (máximo = 100 pontos)
+        max_prob = max(sufix_probs.values()) if sufix_probs else 0.25
+        if max_prob <= 0.0:
+            max_prob = 0.25
             
-        return score
+        # O score varia proporcionalmente à probabilidade, de 10.0 (mínimo) a 100.0 (máximo)
+        score = 10.0 + 90.0 * (prob / max_prob)
+        return min(100.0, max(10.0, score))

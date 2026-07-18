@@ -20,11 +20,10 @@ class DeltaXorPlugin(BasePlugin):
             
         ratio = ones / total_bits
         
-        # Esperamos que chaves não-aleatórias tenham pequenos vieses na transição.
-        # Alvo ideal de transição de Hamming XOR em chaves pseudo-aleatórias: ~50% (0.5)
-        # O desvio em chaves estruturadas de puzzles resolvidos é tipicamente muito estreito.
-        target_ratio = 0.5015
-        sigma = 0.03
-        
+        target_ratio = self.metadata.get("average_xor_transition_ratio", 0.531)
+        sigma = self.metadata.get("std_xor_transition_ratio", 0.1288)
+        if sigma <= 0.0:
+            sigma = 0.1288
+            
         score = 100.0 * math.exp(-0.5 * ((ratio - target_ratio) / sigma) ** 2)
         return score

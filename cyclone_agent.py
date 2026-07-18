@@ -1621,13 +1621,15 @@ def load_hypothesis_plugins():
         from plugins.entropy import EntropyPlugin
         from plugins.sufix_bias import SufixBiasPlugin
         from plugins.delta_xor import DeltaXorPlugin
+        from plugins.prefix_bias import PrefixBiasPlugin
         
         _PLUGINS = [
             ("IntervalBias", IntervalBiasPlugin(metadata)),
             ("BitDensity", BitDensityPlugin(metadata)),
             ("Entropy", EntropyPlugin(metadata)),
             ("SufixBias", SufixBiasPlugin(metadata)),
-            ("DeltaXor", DeltaXorPlugin(metadata))
+            ("DeltaXor", DeltaXorPlugin(metadata)),
+            ("PrefixBias", PrefixBiasPlugin(metadata))
         ]
         print(f"[Pool] Hypothesis Engine ativo. {len(_PLUGINS)} plugins carregados com sucesso!")
     except Exception as e:

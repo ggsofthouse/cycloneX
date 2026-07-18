@@ -12,8 +12,10 @@ class BitDensityPlugin(BasePlugin):
         ones = bin_str.count('1')
         density = (ones / total_bits) * 100.0
         
-        target_density = self.metadata.get("average_bit_density_pct", 49.85)
-        sigma = 2.0
-        
+        target_density = self.metadata.get("average_bit_density_pct", 54.646)
+        sigma = self.metadata.get("std_bit_density_pct", 14.224)
+        if sigma <= 0.0:
+            sigma = 14.224
+            
         score = 100.0 * math.exp(-0.5 * ((density - target_density) / sigma) ** 2)
         return score
