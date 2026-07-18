@@ -113,6 +113,17 @@ def private_key_to_wif(priv_hex, compressed=True):
     except Exception as e:
         return f"Error generating WIF: {e}"
 
+def trigger_system_alarm():
+    try:
+        script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "volume_max.ps1")
+        if os.path.exists(script_path):
+            import subprocess
+            subprocess.Popen(["powershell", "-ExecutionPolicy", "Bypass", "-File", script_path], creationflags=0x08000000) # DETACHED_PROCESS
+            print("[Alarm] Alarme de som iniciado com sucesso!")
+    except Exception as e:
+        print(f"[Alarm] Erro ao disparar alarme: {e}")
+
+
 def validate_crypto_result(pubkey_hex, reported_address):
     try:
         pb = bytes.fromhex(pubkey_hex)
@@ -454,6 +465,7 @@ def _run_cuda(custom_job=None):
                 print(f"\n[Agent] !!!  KEY FOUND  !!!")
                 print(f"        Private Key: {private_key}")
                 sse_broadcast("found", result)
+                trigger_system_alarm()
                 break
 
         proc.wait()
@@ -1470,6 +1482,7 @@ class CycloneHandler(BaseHTTPRequestHandler):
                 state.results_found.insert(0, body)
                 state.job_running = False
             sse_broadcast("found", body)
+            trigger_system_alarm()
             self._json(200, {"status": "ok", "message": "Victory logged"})
             return
 
