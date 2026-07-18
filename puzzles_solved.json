@@ -571,5 +571,32 @@
       "0": 0.030303030303030304
     }
   },
-  "notes": "Estat\u00edsticas ricas geradas dinamicamente com base em 82 chaves historicas pelo CycloneX Analyzer v3.0."
+  "notes": "Estat\u00edsticas ricas geradas dinamicamente com base em 82 chaves historicas pelo CycloneX Analyzer v3.0.",
+  "family_modulo_5_stats": {
+    "0": {
+      "avg_offset": -96.8,
+      "std_offset": 13.27,
+      "average_hamming_distance_step_5": 21.1
+    },
+    "1": {
+      "avg_offset": -88.73,
+      "std_offset": 27.37,
+      "average_hamming_distance_step_5": 12.9
+    },
+    "2": {
+      "avg_offset": -90.36,
+      "std_offset": 25.97,
+      "average_hamming_distance_step_5": 13.5
+    },
+    "3": {
+      "avg_offset": -92.68,
+      "std_offset": 19.53,
+      "average_hamming_distance_step_5": 12.7
+    },
+    "4": {
+      "avg_offset": -92.37,
+      "std_offset": 22.46,
+      "average_hamming_distance_step_5": 14.1
+    }
+  }
 }
