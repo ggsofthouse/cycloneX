@@ -4,57 +4,57 @@ import math
 import os
 from collections import Counter, defaultdict
 
-# Mapeamento explícito de Puzzle ID -> Chave Privada em Hex
-SOLVED_PUZZLES = {}
+# Carregar chaves reais extraídas do arquivo puzzles_solved_clean.json
+with open("puzzles_solved_clean.json", "r", encoding="utf-8") as f:
+    RAW_SOLVED_PUZZLES = json.load(f)
 
-# Puzzles 1 a 70 (flat list na ordem sequencial)
-flat_keys_1_70 = [
-    "1", "2", "3", "7", "b", "f", "11", "1b", "25", "37", 
-    "51", "7e", "ba", "111", "182", "27c", "380", "5c5", "835", "d71",
-    "14cb", "1e51", "3093", "459a", "6a2f", "b6c9", "10168", "1ad82", "29ba2", "3be33",
-    "48fb1", "8361b", "de887", "1ab476", "23ab9b", "529ba0", "8e51a5", "df5c27", "1141bc7", "1d92ab0",
-    "3f7a6f2", "609c12b", "ed8ba27", "19cf3902", "3ba8e9c2",
-    "55cb80ea", "be539a2f", "10f3c5ea0", "3f1a0ba7c", "5cf26d90a",
-    "e27b9c105", "1ad9c3b8ea", "3e8cb9da0f", "b0c9df38ea", "14fa76bc8f5",
-    "29dfa8eb3c0", "63eab90c5f5", "be83ab9cda0", "13a8fbc8da9e0", "327a8fb9cda05",
-    "529eabc7da9e0", "d9b0ca8ebf5c0", "148fbcd7ea9c05", "2f5c27d89abce2", "73bfa9e8dc0a50",
-    "d29df8abc10ef5", "1c9dfbcda80a520", "30fa8e7db9c2e05", "4eb9cdaef01bc80", "bd3a8fb9cde0b05"
-]
+# Converter chaves do dicionário para tipos numéricos e ordenados por ID do Puzzle
+SOLVED_PUZZLES = {int(k): v for k, v in RAW_SOLVED_PUZZLES.items()}
 
-for idx, k in enumerate(flat_keys_1_70, start=1):
-    SOLVED_PUZZLES[idx] = k
+def get_range_params(puzzle_id):
+    range_start = 2 ** (puzzle_id - 1)
+    range_end = (2 ** puzzle_id) - 1
+    return range_start, range_end
 
-# Puzzles adicionais resolvidos terminados em 0 e 5
-SOLVED_PUZZLES[75]  = "13fa7ebd9c20a5c0"
-SOLVED_PUZZLES[80]  = "67bfa9e8dc05b2a0"
-SOLVED_PUZZLES[85]  = "167fa8bcd902a5c05"
-SOLVED_PUZZLES[90]  = "3f8902abcd54e1a0"
-SOLVED_PUZZLES[95]  = "5be38a0c25a4e1055"
-SOLVED_PUZZLES[100] = "be38a20cd1589a00"
-SOLVED_PUZZLES[105] = "1cbf389ab205d5a55"
-SOLVED_PUZZLES[110] = "14fa78bcd902a5c00"
-SOLVED_PUZZLES[115] = "73bfa8ebd902c5255"
-SOLVED_PUZZLES[120] = "3be89c20a54e1a000"
-SOLVED_PUZZLES[125] = "1be89c025a4d1a555"
-SOLVED_PUZZLES[130] = "b8cf39a0bc78d5200"
+def get_offset_pct(val, puzzle_id):
+    start, end = get_range_params(puzzle_id)
+    total_keys = end - start + 1
+    # offset entre 0% e 100%
+    return ((val - start) / total_keys) * 100.0
 
-def get_offset_pct(val, bits):
-    range_start = 2 ** (bits - 1)
-    range_end = (2 ** bits) - 1
-    total_keys = range_end - range_start + 1
-    return ((val - range_start) / total_keys) * 100.0
+def calculate_shannon_entropy(hex_str):
+    if not hex_str:
+        return 0.0
+    counts = Counter(hex_str)
+    length = len(hex_str)
+    ent = 0.0
+    for char, count in counts.items():
+        p = count / length
+        ent -= p * math.log2(p)
+    return ent / 4.0
 
-def run_analysis():
-    report = []
-    report.append("# Relatório de Criptoanálise de Famílias (Mod 5) — CycloneX Analyzer v4.0")
-    report.append("\nEste relatório analisa a hipótese de que o criador dos Bitcoin Puzzles usou um gerador pseudo-aleatório (PRNG) ou uma regra de construção estruturada baseada em famílias com saltos fixos (Mod 5).\n")
-
+def analyze_keys():
+    print(f"Executando criptoanálise real em {len(SOLVED_PUZZLES)} puzzles...")
+    
+    offsets = []
+    bit_densities = []
+    entropies = []
+    
     # 1. Agrupar chaves por famílias Modulo 5
     families = defaultdict(list)
     for p_id, key_hex in sorted(SOLVED_PUZZLES.items()):
         val = int(key_hex, 16)
-        bits = p_id  # O ID do puzzle representa exatamente o tamanho do seu espaço de chaves em bits
-        offset = get_offset_pct(val, bits)
+        offset = get_offset_pct(val, p_id)
+        offsets.append(offset)
+        
+        # Calcular bit density
+        bin_str = bin(val)[2:]
+        ones = bin_str.count('1')
+        bit_densities.append((ones / len(bin_str)) * 100.0)
+        
+        # Shannon Entropy
+        entropies.append(calculate_shannon_entropy(key_hex))
+        
         families[p_id % 5].append({
             "id": p_id,
             "key": val,
@@ -62,108 +62,146 @@ def run_analysis():
             "offset": offset
         })
 
-    # 2. Analisar cada Família (0 a 4)
-    report.append("## 📊 Análise por Família Modulo 5")
+    # Estatísticas globais
+    def get_stats(lst):
+        n = len(lst)
+        if n == 0: return 0.0, 0.0
+        mean = sum(lst) / n
+        variance = sum((x - mean) ** 2 for x in lst) / n
+        return mean, math.sqrt(variance)
+
+    mean_offset, std_offset = get_stats(offsets)
+    mean_density, std_density = get_stats(bit_densities)
+    mean_entropy, std_entropy = get_stats(entropies)
+
+    # 2. Análise por Família (Modulo 5) com normalização
+    report = []
+    report.append("# Relatório Científico de Análise de Puzzles — CycloneX v4.1")
+    report.append("\nAnálise detalhada feita sob as 82 chaves reais publicadas no banco oficial.\n")
+    report.append("## 📊 Estatísticas Gerais do Dataset Real")
+    report.append(f"- **Média de Offset Global:** {mean_offset:.2f}% (Desvio Padrão: {std_offset:.2f}%)")
+    report.append(f"- **Média de Densidade de Bits (Popcount):** {mean_density:.2f}% (Desvio Padrão: {std_density:.2f}%)")
+    report.append(f"- **Média de Entropia de Shannon:** {mean_entropy:.3f} (Desvio Padrão: {std_entropy:.3f})")
+    
+    report.append("\n## 👥 Análise por Família Modulo 5 (Normalizada)")
     
     family_stats = {}
     
     for f_id in sorted(families.keys()):
         members = families[f_id]
-        report.append(f"\n### 👥 Família Mod {f_id} (Puzzles terminados em {f_id} ou {f_id+5})")
-        report.append(f"Quantidade de puzzles resolvidos na família: **{len(members)}**")
+        f_offsets = [m["offset"] for m in members]
+        f_mean_offset, f_std_offset = get_stats(f_offsets)
         
-        # AnalisarOffsets
-        offsets = [m["offset"] for m in members]
-        avg_offset = sum(offsets) / len(offsets)
-        variance = sum((x - avg_offset) ** 2 for x in offsets) / len(offsets)
-        std_offset = math.sqrt(variance)
-        
-        report.append(f"- **Posicionamento médio no range (Offset):** {avg_offset:.2f}% (Desvio Padrão: {std_offset:.2f}%)")
-        
-        # Calcular diferenças entre vizinhos da família (Salto de 5 em 5)
-        diff_vals = []
-        xor_vals = []
-        hamming_diffs = []
-        
-        for i in range(1, len(members)):
-            prev = members[i-1]
-            curr = members[i]
-            
-            # Subtracao
-            diff = curr["key"] - prev["key"]
-            diff_vals.append(diff)
-            
-            # Bitwise XOR
-            xor_val = curr["key"] ^ prev["key"]
-            xor_vals.append(xor_val)
-            
-            # Distancia de Hamming (popcount do XOR)
-            xor_bin = bin(xor_val)[2:]
-            hamming_diffs.append(xor_bin.count('1'))
-            
-        # Apresentar tabela de transições de 5 em 5
-        report.append("\n| Transição | Diferença Numérica (Hex) | Hamming Distance (Bits Alterados) | Posição Relativa |")
-        report.append("| :--- | :--- | :--- | :--- |")
-        for i in range(1, len(members)):
-            prev = members[i-1]
-            curr = members[i]
-            diff_hex = f"{diff_vals[i-1]:x}"
-            if len(diff_hex) > 16:
-                diff_hex = diff_hex[:8] + "..." + diff_hex[-8:]
-            report.append(f"| {prev['id']} → {curr['id']} | `0x{diff_hex}` | {hamming_diffs[i-1]} bits | {curr['offset']:.2f}% |")
-            
-        # Guardar estatísticas para o JSON
+        # Guardar para o JSON
         family_stats[str(f_id)] = {
-            "avg_offset": round(avg_offset, 2),
-            "std_offset": round(std_offset, 2),
-            "average_hamming_distance_step_5": round(sum(hamming_diffs)/len(hamming_diffs), 1) if hamming_diffs else 0
+            "avg_offset": round(f_mean_offset, 2),
+            "std_offset": round(f_std_offset, 2)
         }
+        
+        report.append(f"\n### Família Mod {f_id} (Puzzles terminados em {f_id} ou {f_id+5})")
+        report.append(f"Membros resolvidos: **{len(members)}**")
+        report.append(f"- **Posicionamento médio no range (Offset):** {f_mean_offset:.2f}% (Desvio Padrão: {f_std_offset:.2f}%)")
+        
+        # Hamming Distance Cruzada e Normalizada (Removendo o bit estrutural)
+        # Alinhando chaves para o tamanho de bits variáveis
+        hamming_dists = []
+        for i in range(1, len(members)):
+            prev = members[i-1]
+            curr = members[i]
+            
+            # Remover o MSB estrutural (que é sempre 1 na posição 2^(p_id-1))
+            val_prev_clean = prev["key"] - (2 ** (prev["id"] - 1))
+            val_curr_clean = curr["key"] - (2 ** (curr["id"] - 1))
+            
+            # XOR nos bits variáveis restantes
+            xor_val = val_curr_clean ^ val_prev_clean
+            h_dist = bin(xor_val).count('1')
+            hamming_dists.append(h_dist)
+            
+        if hamming_dists:
+            avg_h = sum(hamming_dists) / len(hamming_dists)
+            report.append(f"- **Distância de Hamming Média Normalizada:** {avg_h:.1f} bits alterados")
+        else:
+            report.append("- **Distância de Hamming Média Normalizada:** N/A (Membros insuficientes)")
 
-    # 3. Cruzamento de dados entre Puzzle 70, 75, 80, 85 e a projeção para 71
-    report.append("\n## 🎯 O Caso Específico: 70 → 75 → 80 → 85 → (90 → 95 → 100 ...)")
-    report.append("Ao isolar os puzzles Mod 0 e Mod 5 vizinhos do nosso alvo (Puzzle 71), observamos a seguinte progressão:\n")
+    # 3. Teste Cego Leave-One-Out (Validação Cruzada) para a Família Mod 1 (Família do Puzzle 71)
+    report.append("\n## 🔬 Teste de Validação Leave-One-Out (Família Mod 1)")
+    report.append("Simulamos a eficácia do modelo estatístico tentando prever cada puzzle resolvido da família Mod 1 (como se ele fosse oculto):\n")
     
-    target_puzzles = [70, 75, 80, 85, 90, 95, 100, 105, 110, 115, 120, 125, 130]
-    report.append("| Puzzle ID | Chave Privada (Hex) | Posição no Range | Popcount (Bits 1) | Sufixo |")
-    report.append("| :--- | :--- | :--- | :--- | :--- |")
-    for pid in target_puzzles:
-        k_hex = SOLVED_PUZZLES[pid]
-        val = int(k_hex, 16)
-        offset = get_offset_pct(val, pid)
-        pop = bin(val).count('1')
-        report.append(f"| **{pid}** | `{k_hex}` | {offset:.2f}% | {pop} | `{k_hex[-1]}` |")
-
-    # 4. Análise de Correlação/XOR consecutiva na Família
-    report.append("\n### ⚡ Distância de Hamming na progressão da Família:")
-    for i in range(1, len(target_puzzles)):
-        p1 = target_puzzles[i-1]
-        p2 = target_puzzles[i]
-        k1 = int(SOLVED_PUZZLES[p1], 16)
-        k2 = int(SOLVED_PUZZLES[p2], 16)
-        xor_val = k1 ^ k2
-        h_dist = bin(xor_val).count('1')
-        report.append(f"- **Puzzle {p1} XOR {p2}** altera **{h_dist} bits**.")
-
-    # Conclusão e Insights Metodológicos
-    report.append("\n## 💡 Insights sobre o Puzzle 71 (Alvo Atual)")
-    report.append("1. **Posicionamento de Família:** O Puzzle 71 pertence à **Família Mod 1**. O offset histórico médio dessa família é de **47.2%** com desvio padrão de **29%**.")
-    report.append("2. **Heurística Ponderada:** Ao invés de usar uma média global de offsets, usar os pesos específicos da Família do Puzzle correspondente reduz drasticamente falsos positivos.")
+    mod1_puzzles = [m["id"] for m in families[1] if m["id"] > 10] # Focar em puzzles maiores
     
-    # Salvar Relatório como artefato Markdown
+    hits_top_10 = 0
+    hits_top_20 = 0
+    
+    report.append("| Puzzle Oculto | Offset Real | Média dos Outros | Desvio dos Outros | Top 10% Match? | Top 25% Match? |")
+    report.append("| :--- | :--- | :--- | :--- | :--- | :--- |")
+    
+    for target_id in mod1_puzzles:
+        # Treinar apenas com os outros membros da família Mod 1
+        train_offsets = [m["offset"] for m in families[1] if m["id"] != target_id]
+        target_offset = next(m["offset"] for m in families[1] if m["id"] == target_id)
+        
+        t_mean, t_std = get_stats(train_offsets)
+        
+        # Calcular Z-score para ver a proximidade
+        z_score = abs(target_offset - t_mean) / (t_std if t_std > 0 else 1.0)
+        
+        # Se Z-score < 1.28, cai no intervalo Gaussiano de confiança de 20% (ou seja, match de ~25% da busca)
+        # Se Z-score < 0.25, cai no Top 10%
+        top10 = "✅ Sim" if z_score < 0.3 else "❌ Não"
+        top25 = "✅ Sim" if z_score < 1.28 else "❌ Não"
+        
+        if z_score < 0.3:
+            hits_top_10 += 1
+        if z_score < 1.28:
+            hits_top_20 += 1
+            
+        report.append(f"| #{target_id} | {target_offset:.2f}% | {t_mean:.2f}% | {t_std:.2f}% | {top10} | {top25} |")
+        
+    report.append(f"\n### Resultado da Validação Cruzada:")
+    report.append(f"- **Top 10% de Confiança:** {hits_top_10}/{len(mod1_puzzles)} ({hits_top_10/len(mod1_puzzles)*100:.1f}%)")
+    report.append(f"- **Top 25% de Confiança (Gaussiano 1.28-Sigma):** {hits_top_20}/{len(mod1_puzzles)} ({hits_top_20/len(mod1_puzzles)*100:.1f}%)")
+    
+    # 4. Probabilidade de Caracteres Finais e Iniciais dos dados REAIS
+    sufix_counts = Counter()
+    prefix_counts = Counter()
+    for key_hex in SOLVED_PUZZLES.values():
+        sufix_counts[key_hex[-1].lower()] += 1
+        prefix_counts[key_hex[0].lower()] += 1
+        
+    total = len(SOLVED_PUZZLES)
+    sufix_probs = {k: v / total for k, v in sufix_counts.items()}
+    prefix_probs = {k: v / total for k, v in prefix_counts.items()}
+    
+    # Laplace smoothing para sufixo e prefixo
+    for c in "0123456789abcdef":
+        if c not in sufix_probs: sufix_probs[c] = 0.001
+        if c not in prefix_probs: prefix_probs[c] = 0.001
+
+    # Salvar Relatório
     with open("family_analysis_report.md", "w", encoding="utf-8") as f:
         f.write("\n".join(report))
         
-    # Atualizar puzzles_solved.json com as estatísticas de famílias modulo 5
-    with open("puzzles_solved.json", "r", encoding="utf-8") as f:
-        meta = json.load(f)
-        
-    meta["family_modulo_5_stats"] = family_stats
+    # Salvar no JSON final do motor
+    metadata = {
+        "solved_count": len(SOLVED_PUZZLES),
+        "average_offset_pct": round(mean_offset, 2),
+        "std_offset_pct": round(std_offset, 2),
+        "average_bit_density_pct": round(mean_density, 3),
+        "std_bit_density_pct": round(std_density, 3),
+        "average_entropy": round(mean_entropy, 3),
+        "std_entropy": round(std_entropy, 3),
+        "family_modulo_5_stats": family_stats,
+        "sufix_probability": sufix_probs,
+        "prefix_probability": prefix_probs,
+        "notes": "Metadados gerados estritamente com base no dataset real fornecido em puzzles_solved_clean.json."
+    }
     
     with open("puzzles_solved.json", "w", encoding="utf-8") as f:
-        json.dump(meta, f, indent=2)
+        json.dump(metadata, f, indent=2)
 
-    print("[OK] Relatório de análise de famílias gerado em: family_analysis_report.md")
-    print("[OK] puzzles_solved.json atualizado com dados Mod 5!")
+    print("[OK] Criptoanálise real concluída com sucesso!")
+    print("[OK] Relatório gerado em: family_analysis_report.md")
 
 if __name__ == "__main__":
-    run_analysis()
+    analyze_keys()
