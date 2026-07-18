@@ -1377,13 +1377,45 @@ class CycloneHandler(BaseHTTPRequestHandler):
                                 if block_end > end_val:
                                     block_end = end_val
                                     
-                                # Somar score de todos os plugins carregados
+                                # Somar score de todos os plugins carregados avaliando 3 pontos no bloco (25%, 50% e 75%)
+
+                                    
                                 combined_score = 0.0
+
+                                    
+                                q25 = block_start + int(block_size * 0.25)
+
+                                    
+                                q50 = block_start + int(block_size * 0.50)
+
+                                    
+                                q75 = block_start + int(block_size * 0.75)
+
+                                    
                                 for name, plugin in _PLUGINS:
+
+                                    
                                     try:
-                                        plugin_score = plugin.calculate_score(block_start, block_end, start_val, end_val)
+
+                                    
+                                        score_25 = plugin.calculate_score(q25, q25, start_val, end_val)
+
+                                    
+                                        score_50 = plugin.calculate_score(q50, q50, start_val, end_val)
+
+                                    
+                                        score_75 = plugin.calculate_score(q75, q75, start_val, end_val)
+
+                                    
+                                        plugin_score = (score_25 + score_50 + score_75) / 3.0
+
+                                    
                                         combined_score += plugin_score
+
+                                    
                                     except Exception:
+
+                                    
                                         combined_score += 50.0 # fallback médio
                                         
                                 combined_score = combined_score / len(_PLUGINS)
@@ -1635,6 +1667,8 @@ def load_hypothesis_plugins():
         from plugins.sufix_bias import SufixBiasPlugin
         from plugins.delta_xor import DeltaXorPlugin
         from plugins.prefix_bias import PrefixBiasPlugin
+        from plugins.transition_matrix import TransitionMatrixPlugin
+        from plugins.byte_frequency import ByteFrequencyPlugin
         
         _PLUGINS = [
             ("IntervalBias", IntervalBiasPlugin(metadata)),
@@ -1642,7 +1676,9 @@ def load_hypothesis_plugins():
             ("Entropy", EntropyPlugin(metadata)),
             ("SufixBias", SufixBiasPlugin(metadata)),
             ("DeltaXor", DeltaXorPlugin(metadata)),
-            ("PrefixBias", PrefixBiasPlugin(metadata))
+            ("PrefixBias", PrefixBiasPlugin(metadata)),
+            ("TransitionMatrix", TransitionMatrixPlugin(metadata)),
+            ("ByteFrequency", ByteFrequencyPlugin(metadata))
         ]
         print(f"[Pool] Hypothesis Engine ativo. {len(_PLUGINS)} plugins carregados com sucesso!")
     except Exception as e:
