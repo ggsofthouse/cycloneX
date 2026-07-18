@@ -99,6 +99,20 @@ def base58check_encode(payload, version=0):
     cs = hashlib.sha256(hashlib.sha256(data).digest()).digest()[:4]
     return base58_encode(data + cs)
 
+def private_key_to_wif(priv_hex, compressed=True):
+    try:
+        # Converter hex da chave privada para bytes (32 bytes)
+        priv_bytes = bytes.fromhex(priv_hex.zfill(64))
+        # Prefixo do mainnet (0x80)
+        payload = b'\x80' + priv_bytes
+        if compressed:
+            payload += b'\x01'
+        # Calcular checksum double-SHA256
+        cs = hashlib.sha256(hashlib.sha256(payload).digest()).digest()[:4]
+        return base58_encode(payload + cs)
+    except Exception as e:
+        return f"Error generating WIF: {e}"
+
 def validate_crypto_result(pubkey_hex, reported_address):
     try:
         pb = bytes.fromhex(pubkey_hex)
@@ -421,6 +435,8 @@ def _run_cuda(custom_job=None):
                     "keys_checked": state.keys_checked,
                     "timestamp":    time.time() * 1000,
                     "private_key":  private_key,
+                    "private_key_wif_compressed": private_key_to_wif(private_key, compressed=True),
+                    "private_key_wif_uncompressed": private_key_to_wif(private_key, compressed=False),
                     "public_key":   public_key,
                     "address":      target_addr,
                     "avg_speed":    f"{state.speed_mkeys/1000:.2f} GKeys/s",
@@ -1444,6 +1460,12 @@ class CycloneHandler(BaseHTTPRequestHandler):
             print(f"\n[Pool Master] !!! CHAVE ENCONTRADA POR WORKER !!!")
             print(f"              Worker: {body.get('machine', 'unknown')}")
             print(f"              Chave : {body.get('private_key', 'unknown')}\n")
+            
+            # Enriquecer resultado com chaves WIF
+            pk_hex = body.get("private_key")
+            if pk_hex and "private_key_wif_compressed" not in body:
+                body["private_key_wif_compressed"] = private_key_to_wif(pk_hex, compressed=True)
+                body["private_key_wif_uncompressed"] = private_key_to_wif(pk_hex, compressed=False)
             with state.lock:
                 state.results_found.insert(0, body)
                 state.job_running = False

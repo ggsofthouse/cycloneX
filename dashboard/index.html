@@ -1342,6 +1342,14 @@ body {
       <div class="found-key-value" id="found-privkey">—</div>
     </div>
     <div class="found-key-block">
+      <div class="found-key-label">Private Key (WIF Compressed)</div>
+      <div class="found-key-value" id="found-wif-compressed" style="color:var(--cyan)">—</div>
+    </div>
+    <div class="found-key-block">
+      <div class="found-key-label">Private Key (WIF Uncompressed)</div>
+      <div class="found-key-value" id="found-wif-uncompressed">—</div>
+    </div>
+    <div class="found-key-block">
       <div class="found-key-label">Public Key (compressed)</div>
       <div class="found-key-value" id="found-pubkey">—</div>
     </div>
@@ -1388,6 +1396,8 @@ body {
       <div class="detail-section-title">Result</div>
       <div style="display:flex;flex-direction:column;gap:8px">
         <div class="found-key-block"><div class="found-key-label">Private Key</div><div class="found-key-value" id="det-privkey" style="color:var(--cyan)">—</div></div>
+        <div class="found-key-block"><div class="found-key-label">Private Key (WIF Compressed)</div><div class="found-key-value" id="det-wif-compressed" style="color:var(--cyan)">—</div></div>
+        <div class="found-key-block"><div class="found-key-label">Private Key (WIF Uncompressed)</div><div class="found-key-value" id="det-wif-uncompressed">—</div></div>
         <div class="found-key-block"><div class="found-key-label">Public Key</div><div class="found-key-value" id="det-pubkey">—</div></div>
         <div class="found-key-block"><div class="found-key-label">Address</div><div class="found-key-value" id="det-address" style="color:var(--green)">—</div></div>
       </div>
@@ -2237,6 +2247,8 @@ function showFoundOverlay(r) {
   document.getElementById('found-keys').textContent = formatLargeNum(r.keys_checked||0);
   document.getElementById('found-ts').textContent = r.timestamp ? new Date(r.timestamp).toLocaleTimeString() : '—';
   document.getElementById('found-privkey').textContent = r.private_key || '—';
+  document.getElementById('found-wif-compressed').textContent = r.private_key_wif_compressed || '—';
+  document.getElementById('found-wif-uncompressed').textContent = r.private_key_wif_uncompressed || '—';
   document.getElementById('found-pubkey').textContent  = r.public_key  || '—';
   document.getElementById('found-address').textContent = r.address      || '—';
 
@@ -2290,7 +2302,7 @@ function clearParticles() {
 function copyFoundResult() {
   const r = state.lastFoundResult;
   if (!r) return;
-  const text = `CycloneX Result\n${'='.repeat(40)}\nMachine: ${r.machine}\nJob: ${r.job}\nGPU: ${r.gpu}\nTimestamp: ${r.timestamp}\n\nPrivate Key: ${r.private_key}\nPublic Key: ${r.public_key}\nAddress: ${r.address}\n\nKeys Checked: ${r.keys_checked}\nDuration: ${r.duration}`;
+  const text = `CycloneX Result\n${'='.repeat(40)}\nMachine: ${r.machine}\nJob: ${r.job}\nGPU: ${r.gpu}\nTimestamp: ${r.timestamp}\n\nPrivate Key: ${r.private_key}\nPrivate Key (WIF Compressed): ${r.private_key_wif_compressed || '—'}\nPrivate Key (WIF Uncompressed): ${r.private_key_wif_uncompressed || '—'}\nPublic Key: ${r.public_key}\nAddress: ${r.address}\n\nKeys Checked: ${r.keys_checked}\nDuration: ${r.duration}`;
   navigator.clipboard.writeText(text).then(() => showToast('success', '📋 Copied!', 'Result copied to clipboard'));
 }
 
@@ -2329,6 +2341,8 @@ function populateDetail(r) {
   document.getElementById('det-power').textContent    = r.power_at_found ? r.power_at_found + 'W' : '—';
   document.getElementById('det-clock').textContent    = r.clock_at_found ? r.clock_at_found + ' MHz' : '—';
   document.getElementById('det-privkey').textContent  = r.private_key || '—';
+  document.getElementById('det-wif-compressed').textContent = r.private_key_wif_compressed || '—';
+  document.getElementById('det-wif-uncompressed').textContent = r.private_key_wif_uncompressed || '—';
   document.getElementById('det-pubkey').textContent   = r.public_key  || '—';
   document.getElementById('det-address').textContent  = r.address      || '—';
   document.getElementById('det-ckpt-num').textContent  = r.checkpoint_num || '—';
