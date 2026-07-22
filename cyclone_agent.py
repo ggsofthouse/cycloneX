@@ -63,17 +63,17 @@ def load_config(path=None):
             if ':' in line:
                 k, v = line.split(':', 1)
                 k, v = k.strip(), v.strip()
-                if v.startswith('"') and v.endswith('"'):
+                if (v.startswith('"') and v.endswith('"')) or (v.startswith("'") and v.endswith("'")):
                     v = v[1:-1]
-                elif v.startswith("'") and v.endswith("'"):
-                    v = v[1:-1]
-                if v.lower() == 'true':
+                if isinstance(v, str):
+                    v = v.strip(' "\'\\')
+                if str(v).lower() == 'true':
                     v = True
-                elif v.lower() == 'false':
+                elif str(v).lower() == 'false':
                     v = False
                 else:
                     try:
-                        v = float(v) if '.' in v else int(v)
+                        v = float(v) if '.' in str(v) else int(v)
                     except (ValueError, TypeError):
                         pass
                 if current_section:
@@ -81,6 +81,20 @@ def load_config(path=None):
                 else:
                     cfg[k] = v
     return cfg
+
+def get_master_url(cfg=None):
+    if cfg is None:
+        cfg = load_config()
+    pool_cfg = cfg.get("pool", {}) if isinstance(cfg, dict) else {}
+    raw = os.environ.get("MASTER_URL") or pool_cfg.get("master_url")
+    if not raw or not str(raw).strip():
+        return "http://localhost:8080"
+    url = str(raw).strip().strip(' "\'\\').rstrip('/')
+    if not url:
+        return "http://localhost:8080"
+    if not url.startswith(("http://", "https://")):
+        url = "http://" + url
+    return url
 
 # ── CRYPTO HELPERS ────────────────────────────────────────────────────────────
 BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
@@ -584,7 +598,7 @@ def _pool_worker_loop():
     global state
     cfg = load_config()
     pool_cfg = cfg.get("pool", {})
-    master_url = pool_cfg.get("master_url", "http://localhost:8080").rstrip('/')
+    master_url = get_master_url(cfg)
     worker_id = socket.gethostname()
     token = cfg.get("api", {}).get("token", "cyclone_token_12345")
     
@@ -736,7 +750,7 @@ def _pool_worker_telemetry_loop():
     global state
     cfg = load_config()
     pool_cfg = cfg.get("pool", {})
-    master_url = pool_cfg.get("master_url", "http://localhost:8080").rstrip('/')
+    master_url = get_master_url(cfg)
     worker_id = socket.gethostname()
     token = cfg.get("api", {}).get("token", "cyclone_token_12345")
     
