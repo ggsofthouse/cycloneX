@@ -27,7 +27,7 @@ import argparse
 
 def main():
     parser = argparse.ArgumentParser(description="CycloneX Kaggle Multi-GPU Engine")
-    parser.add_argument("--instance", type=int, default=1, help="ID da instância/conta (1..8) para garantir sementes únicas")
+    parser.add_argument("--instance", type=int, default=1, help="ID da instância/conta (1..N ilimitado) para garantir sementes únicas")
     args, unknown = parser.parse_known_args()
 
     print("==========================================================")
