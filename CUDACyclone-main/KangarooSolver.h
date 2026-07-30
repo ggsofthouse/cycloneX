@@ -29,13 +29,18 @@ private:
     bool m_found{false};
     uint64_t m_found_private_key[4]{0};
 
-    // Banco de Distinguished Points em memória para detecção de colisões rápida
+    // Banco de Distinguished Points em memória para detecção de colisões ultra-rápida (256-bit exata)
     struct DPInfo {
         bool is_wild;
         uint64_t distance[4]; // Passos/distância percorrida do início
     };
-    // pubkey_x_hex -> DPInfo
-    std::unordered_map<std::string, DPInfo> m_dp_database;
+    struct DPHash {
+        size_t operator()(const std::array<uint64_t, 4>& arr) const {
+            return arr[0] ^ (arr[1] * 0x9e3779b97f4a7c15ULL) ^ (arr[2] * 0xbf58476d1ce4e5b9ULL) ^ (arr[3] * 0x94d049bb133111ebULL);
+        }
+    };
+    // pubkey_x_256bit -> DPInfo
+    std::unordered_map<std::array<uint64_t, 4>, DPInfo, DPHash> m_dp_database;
     std::mutex m_dp_mutex;
 };
 

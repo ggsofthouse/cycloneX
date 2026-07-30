@@ -17,7 +17,7 @@ __host__ __forceinline__ void add256_u64(const uint64_t a[4], uint64_t b, uint64
     }
 }
 
-__host__ __forceinline__ void add256(const uint64_t a[4], const uint64_t b[4], uint64_t out[4]) {
+__host__ __device__ __forceinline__ void add256(const uint64_t a[4], const uint64_t b[4], uint64_t out[4]) {
     uint64_t carry = 0;
     for (int i = 0; i < 4; ++i) {
         uint64_t s = a[i] + b[i];
@@ -29,15 +29,14 @@ __host__ __forceinline__ void add256(const uint64_t a[4], const uint64_t b[4], u
     }
 }
 
-__host__ __forceinline__ void sub256(const uint64_t a[4], const uint64_t b[4], uint64_t out[4]) {
+__host__ __device__ __forceinline__ void sub256(const uint64_t a[4], const uint64_t b[4], uint64_t out[4]) {
     uint64_t borrow = 0;
     for (int i = 0; i < 4; ++i) {
-        uint64_t diff = a[i] - borrow;
-        uint64_t nb = (diff > a[i]) ? 1ULL : 0ULL;
-        uint64_t diff2 = diff - b[i];
-        if (diff2 > diff) nb = 1ULL;
-        out[i] = diff2;
-        borrow = nb;
+        uint64_t ai = a[i];
+        uint64_t bi = b[i];
+        uint64_t diff = ai - bi - borrow;
+        borrow = (ai < bi + borrow) || (bi + borrow < bi) ? 1ULL : 0ULL;
+        out[i] = diff;
     }
 }
 

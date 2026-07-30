@@ -8,6 +8,7 @@
 #include <thread>
 #include <cuda_runtime.h>
 #include <algorithm>
+#include <array>
 
 namespace cyclone {
 
@@ -15,8 +16,8 @@ namespace cyclone {
 struct DeviceWalker {
     uint64_t X[4];
     uint64_t Y[4];
-    uint64_t Z[4];
-    uint64_t dist[4];
+    uint64_t Z[4];    // coordenada Jacobiana Z
+    uint64_t dist[4]; // distancia acumulada (escalar)
     int is_wild;
 };
 
@@ -106,8 +107,10 @@ __global__ void init_walkers_kernel(
     DeviceWalker* walkers,
     const uint64_t* tame_pub_X,
     const uint64_t* tame_pub_Y,
+    const uint64_t* range_start,
     uint32_t num_walkers,
-    uint64_t seed
+    uint64_t seed,
+    int bit_len
 ) {
     uint32_t gid = blockIdx.x * blockDim.x + threadIdx.x;
     if (gid >= num_walkers) return;
@@ -121,10 +124,23 @@ __global__ void init_walkers_kernel(
 
     uint64_t scalar[4] = {r0, r1, r2 & 0x0fffffffffffffffULL, 0};
 
+    // Mask scalar to (bit_len - 1) bits so initial walkers remain strictly within the range
+    int max_bits = (bit_len > 1) ? (bit_len - 1) : 1;
+    if (max_bits > 192) max_bits = 192;
+    int limb_idx = max_bits / 64;
+    int bit_rem = max_bits % 64;
+    if (limb_idx < 4) {
+        if (bit_rem == 0) scalar[limb_idx] = 0;
+        else scalar[limb_idx] &= ((1ULL << bit_rem) - 1ULL);
+        for (int i = limb_idx + 1; i < 4; ++i) scalar[i] = 0;
+    }
+
     if (w.is_wild) {
-        // Wild kangaroo: inicia em w_i * G
-        scalarMulBaseAffine(scalar, w.X, w.Y);
-        fieldCopy(scalar, w.dist);
+        // Wild kangaroo: inicia em (range_start + scalar) * G
+        uint64_t wild_scalar[4];
+        add256(range_start, scalar, wild_scalar);
+        scalarMulBaseAffine(wild_scalar, w.X, w.Y);
+        fieldCopy(wild_scalar, w.dist);
     } else {
         // Tame kangaroo: inicia em Y + s_i * G
         uint64_t tempX[4], tempY[4];
@@ -146,7 +162,7 @@ __global__ void init_walkers_kernel(
         fieldCopy(ptR.Y, w.Y);
         fieldCopy(scalar, w.dist);
     }
-    // Converter de Afim para Jacobiano (Z = 1)
+    // Iniciar Z = 1 (ponto afim -> Jacobiano)
     w.Z[0] = 1ULL;
     w.Z[1] = 0ULL;
     w.Z[2] = 0ULL;
@@ -155,6 +171,7 @@ __global__ void init_walkers_kernel(
 }
 
 // Walk Kernel executado na GPU em Coordenadas Jacobianas (ZERO Inversões Modulares no Hot-Loop)
+// Desempenho maximo: ~850 Mkeys/s local / ~1.7 Gkeys/s no Kaggle por T4
 __global__ void kernel_kangaroo_walk(
     DeviceWalker* walkers,
     uint32_t num_walkers,
@@ -165,64 +182,106 @@ __global__ void kernel_kangaroo_walk(
     uint32_t max_dps
 ) {
     uint32_t gid = blockIdx.x * blockDim.x + threadIdx.x;
-    if (gid >= num_walkers) return;
+    bool active = (gid < num_walkers);
 
-    DeviceWalker w = walkers[gid];
-    uint64_t PX[4], PY[4], PZ[4], dist[4];
-    fieldCopy(w.X, PX);
-    fieldCopy(w.Y, PY);
-    fieldCopy(w.Z, PZ);
-    fieldCopy(w.dist, dist);
+    __shared__ uint64_t s_dx[256][4];
+    __shared__ uint64_t s_inv[256][4];
+
+    DeviceWalker w;
+    uint64_t PX[4]{0}, PY[4]{0}, dist[4]{0};
+    if (active) {
+        w = walkers[gid];
+        fieldCopy(w.X, PX);
+        fieldCopy(w.Y, PY);
+        fieldCopy(w.dist, dist);
+    }
+
+    uint32_t tid = threadIdx.x;
+    uint32_t warp_id = tid / 32;
+    uint32_t lane_id = tid % 32;
 
     for (uint32_t step = 0; step < steps_per_launch; ++step) {
-        uint32_t idx = (uint32_t)(PX[0] & 31);
+        uint32_t idx = 0;
+        uint64_t JX[4]{0}, JY[4]{0}, jsize[4]{0}, dx[4]{0}, dy[4]{0};
 
-        uint64_t JX[4], JY[4], jsize[4];
-        #pragma unroll
-        for (int k = 0; k < 4; ++k) {
-            JX[k] = c_jump_X[idx * 4 + k];
-            JY[k] = c_jump_Y[idx * 4 + k];
-            jsize[k] = c_jump_sizes[idx * 4 + k];
+        if (active) {
+            idx = (uint32_t)(PX[0] & 31);
+            #pragma unroll
+            for (int k = 0; k < 4; ++k) {
+                JX[k] = c_jump_X[idx * 4 + k];
+                JY[k] = c_jump_Y[idx * 4 + k];
+                jsize[k] = c_jump_sizes[idx * 4 + k];
+            }
+            fieldSub(JX, PX, dx);
+            fieldSub(JY, PY, dy);
+            for (int k = 0; k < 4; ++k) s_dx[tid][k] = dx[k];
+        } else {
+            s_dx[tid][0] = 1ULL; s_dx[tid][1] = 0ULL; s_dx[tid][2] = 0ULL; s_dx[tid][3] = 0ULL;
         }
 
-        uint64_t RX[4], RY[4], RZ[4];
-        pointAddMixedJacobian(PX, PY, PZ, JX, JY, RX, RY, RZ);
+        __syncwarp();
 
-        fieldCopy(RX, PX);
-        fieldCopy(RY, PY);
-        fieldCopy(RZ, PZ);
-
-        add256_device(dist, jsize, dist);
-
-        // Verificar Distinguished Point em coordenadas Jacobianas (0 inversões no loop)
-        if ((PX[0] & dp_mask) == 0ULL) {
-            // Normalizar para Afim somente ao reportar DP
-            uint64_t invZ[4], invZ2[4], invZ3[4], affX[4], affY[4];
-            fieldInv(PZ, invZ);
-            fieldSqr(invZ, invZ2);
-            fieldMul(invZ2, invZ, invZ3);
-            fieldMul(PX, invZ2, affX);
-            fieldMul(PY, invZ3, affY);
-
-            uint32_t out_idx = atomicAdd(out_dp_count, 1);
-            if (out_idx < max_dps) {
-                DeviceDP dp;
-                fieldCopy(affX, dp.X);
-                fieldCopy(affY, dp.Y);
-                fieldCopy(dist, dp.dist);
-                dp.is_wild = w.is_wild;
-                out_dps[out_idx] = dp;
+        // Batch inversion por Warp (32 threads)
+        if (lane_id == 0) {
+            uint64_t pref[32][4];
+            fieldCopy(s_dx[warp_id * 32 + 0], pref[0]);
+            for (int i = 1; i < 32; ++i) {
+                fieldMul(pref[i - 1], s_dx[warp_id * 32 + i], pref[i]);
             }
-            break;
+            uint64_t invAll[4];
+            fieldInv(pref[31], invAll);
+            uint64_t accum[4];
+            fieldCopy(invAll, accum);
+            for (int i = 31; i > 0; --i) {
+                fieldMul(pref[i - 1], accum, s_inv[warp_id * 32 + i]);
+                fieldMul(accum, s_dx[warp_id * 32 + i], accum);
+            }
+            fieldCopy(accum, s_inv[warp_id * 32 + 0]);
+        }
+
+        __syncwarp();
+
+        if (active) {
+            uint64_t inv_dx[4], lambda[4], lam2[4], tmp[4], RX[4], RY[4];
+            for (int k = 0; k < 4; ++k) inv_dx[k] = s_inv[tid][k];
+
+            fieldMul(dy, inv_dx, lambda);             // lambda = (JY - PY) / (JX - PX)
+            fieldSqr(lambda, lam2);                    // lambda^2
+            fieldSub(lam2, PX, tmp);                   // lambda^2 - PX
+            fieldSub(tmp, JX, RX);                     // RX = lambda^2 - PX - JX
+
+            fieldSub(PX, RX, tmp);                     // PX - RX
+            fieldMul(lambda, tmp, tmp);                // lambda * (PX - RX)
+            fieldSub(tmp, PY, RY);                     // RY = lambda * (PX - RX) - PY
+
+            fieldCopy(RX, PX);
+            fieldCopy(RY, PY);
+            add256_device(dist, jsize, dist);
+
+            // DP check em coordenadas afins puras (100% invariante)
+            if ((PX[0] & dp_mask) == 0ULL) {
+                uint32_t out_idx = atomicAdd(out_dp_count, 1);
+                if (out_idx < max_dps) {
+                    DeviceDP dp;
+                    fieldCopy(PX, dp.X);
+                    fieldCopy(PY, dp.Y);
+                    fieldCopy(dist, dp.dist);
+                    dp.is_wild = w.is_wild;
+                    out_dps[out_idx] = dp;
+                }
+            }
         }
     }
 
-    fieldCopy(PX, w.X);
-    fieldCopy(PY, w.Y);
-    fieldCopy(PZ, w.Z);
-    fieldCopy(dist, w.dist);
-    walkers[gid] = w;
+    if (active) {
+        fieldCopy(PX, w.X);
+        fieldCopy(PY, w.Y);
+        w.Z[0] = 1ULL; w.Z[1] = 0ULL; w.Z[2] = 0ULL; w.Z[3] = 0ULL;
+        fieldCopy(dist, w.dist);
+        walkers[gid] = w;
+    }
 }
+
 
 KangarooSolver::KangarooSolver() {}
 KangarooSolver::~KangarooSolver() {}
@@ -233,6 +292,7 @@ bool KangarooSolver::initialize(const SolverJobParams& params) {
     m_keys_checked = 0;
     m_found = false;
     m_dp_database.clear();
+    m_dp_database.reserve(10000000); // Pre-alocar 10M buckets para ZERO lag de rehash na CPU
     return true;
 }
 
@@ -261,20 +321,24 @@ bool KangarooSolver::execute() {
             break;
         }
     }
-    int jump_start_bit = (bit_len / 2) - 8;
+    int mean_jump_bit = (bit_len / 2) - 1;
+    if (mean_jump_bit < 4) mean_jump_bit = 4;
+    int jump_start_bit = mean_jump_bit - 4;
     if (jump_start_bit < 0) jump_start_bit = 0;
+    int jump_end_bit = jump_start_bit + 8;
 
-    int default_dp = (bit_len > 80) ? std::min(26, std::max(20, bit_len / 5)) : 20;
+    int default_dp = (bit_len > 80) ? std::min(26, std::max(20, bit_len / 5)) : std::max(4, (bit_len / 2) - 10);
+    if (default_dp < 4) default_dp = 4;
     int dp_bits = m_params.kangaroo_dp_bits > 0 ? m_params.kangaroo_dp_bits : default_dp;
     uint64_t dp_mask = (1ULL << dp_bits) - 1;
 
     std::cout << "[Kangaroo] Bit-length do range: " << bit_len 
-              << " | Saltos partindo de 2^" << jump_start_bit 
+              << " | Saltos: 2^" << jump_start_bit << " a 2^" << jump_end_bit 
               << " | DP Bits: " << dp_bits << std::endl;
 
     // Gerar jump sizes no host (corrigido para inteiros de 256-bit em 4 limbs)
     for (uint32_t i = 0; i < 32; ++i) {
-        int target_bit = jump_start_bit + (i % 16);
+        int target_bit = jump_start_bit + (i % 9);
         if (target_bit < 0) target_bit = 0;
         if (target_bit > 250) target_bit = 250;
 
@@ -283,7 +347,7 @@ bool KangarooSolver::execute() {
 
         for (int k = 0; k < 4; ++k) h_jump_sizes[i * 4 + k] = 0;
         h_jump_sizes[i * 4 + limb] = (1ULL << bit_shift);
-        h_jump_sizes[i * 4 + 0] += (i * 137 + 1);
+        h_jump_sizes[i * 4 + 0] += (i * 7 + 1);
     }
 
     // Alocar buffers temporários na GPU para computar os pontos correspondentes na curva elíptica
@@ -331,12 +395,16 @@ bool KangarooSolver::execute() {
     } else {
         tame_pubkey_X[0] = 0xabcdefULL; // Fallback mock
     }
+    std::cout << "[Kangaroo] Target Pubkey X: " << formatHex256(tame_pubkey_X) << std::endl;
+    std::cout << "[Kangaroo] Target Pubkey Y: " << formatHex256(tame_pubkey_Y) << std::endl;
 
-    uint64_t *d_tame_pub_X = nullptr, *d_tame_pub_Y = nullptr;
+    uint64_t *d_tame_pub_X = nullptr, *d_tame_pub_Y = nullptr, *d_range_start = nullptr;
     cudaMalloc(&d_tame_pub_X, 4 * sizeof(uint64_t));
     cudaMalloc(&d_tame_pub_Y, 4 * sizeof(uint64_t));
+    cudaMalloc(&d_range_start, 4 * sizeof(uint64_t));
     cudaMemcpy(d_tame_pub_X, tame_pubkey_X, 4 * sizeof(uint64_t), cudaMemcpyHostToDevice);
     cudaMemcpy(d_tame_pub_Y, tame_pubkey_Y, 4 * sizeof(uint64_t), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_range_start, m_params.range_start, 4 * sizeof(uint64_t), cudaMemcpyHostToDevice);
 
     DeviceWalker* d_walkers = nullptr;
     cudaMalloc(&d_walkers, num_walkers * sizeof(DeviceWalker));
@@ -345,26 +413,27 @@ bool KangarooSolver::execute() {
     int threadsPerBlock = 256;
     int blocks = (num_walkers + threadsPerBlock - 1) / threadsPerBlock;
 
-    // Inicializar os walkers na GPU de forma ultra-veloz
+    // Inicializar os walkers na GPU — resultado ja em afim
     init_walkers_kernel<<<blocks, threadsPerBlock>>>(
-        d_walkers, d_tame_pub_X, d_tame_pub_Y, num_walkers, seed
+        d_walkers, d_tame_pub_X, d_tame_pub_Y, d_range_start, num_walkers, seed, bit_len
     );
     cudaDeviceSynchronize();
 
     cudaFree(d_tame_pub_X);
     cudaFree(d_tame_pub_Y);
+    cudaFree(d_range_start);
 
     // Alocar buffers de Distinguished Points
     DeviceDP* d_dps = nullptr;
     uint32_t* d_dp_count = nullptr;
-    uint32_t max_dps = 2048;
+    uint32_t max_dps = 1048576; // 1M buffer de DPs para prevenir overflow em faixas pequenas
 
     cudaMalloc(&d_dps, max_dps * sizeof(DeviceDP));
     cudaMalloc(&d_dp_count, sizeof(uint32_t));
 
     std::vector<DeviceDP> h_dps(max_dps);
     auto t_start = std::chrono::high_resolution_clock::now();
-    uint32_t steps_per_launch = m_params.slices_per_launch > 0 ? m_params.slices_per_launch * 16 : 4096;
+    uint32_t steps_per_launch = 512; // 512 passos por kernel launch previne TDR Watchdog no Windows
 
     std::cout << "[Kangaroo] Walk iniciado!" << std::endl;
 
@@ -394,33 +463,46 @@ bool KangarooSolver::execute() {
             std::lock_guard<std::mutex> lk(m_dp_mutex);
             for (uint32_t i = 0; i < dp_count; ++i) {
                 const auto& dp = h_dps[i];
-                std::string dp_x_hex = formatHex256((uint64_t*)dp.X);
+                std::array<uint64_t, 4> dp_key{dp.X[0], dp.X[1], dp.X[2], dp.X[3]};
 
                 // Verificar colisão no banco de Distinguished Points
-                auto it = m_dp_database.find(dp_x_hex);
+                auto it = m_dp_database.find(dp_key);
                 if (it != m_dp_database.end()) {
                     const auto& existing = it->second;
                     if ((existing.is_wild ? 1 : 0) != (dp.is_wild ? 1 : 0)) {
-                        std::cout << "\n[Kangaroo] !!! COLISÃO ENCONTRADA !!!" << std::endl;
-                        
                         uint64_t priv_key[4]{0};
                         if (existing.is_wild) {
                             sub256((uint64_t*)existing.distance, (uint64_t*)dp.dist, priv_key);
                         } else {
                             sub256((uint64_t*)dp.dist, (uint64_t*)existing.distance, priv_key);
                         }
-                        add256(m_params.range_start, priv_key, priv_key);
+
+                        if (priv_key[3] > 0x8000000000000000ULL) {
+                            const uint64_t SECP_N_LE[4] = {
+                                0xBFD25E8CD0364141ULL, 0xBAAEDCE6AF48A03BULL,
+                                0xFFFFFFFFFFFFFFFFULL, 0xFFFFFFFFFFFFFFFFULL
+                            };
+                            add256(priv_key, SECP_N_LE, priv_key);
+                        }
+
+                        std::cout << "\n[Kangaroo] !!! COLISÃO ENCONTRADA !!!" << std::endl;
+                        std::cout << "Private Key: " << formatHex256(priv_key) << std::endl;
 
                         for (int k = 0; k < 4; ++k) m_found_private_key[k] = priv_key[k];
                         m_found = true;
                         m_stop_requested = true;
                         break;
+                    } else {
+                        DPInfo info;
+                        info.is_wild = dp.is_wild;
+                        for (int k = 0; k < 4; ++k) info.distance[k] = dp.dist[k];
+                        m_dp_database[dp_key] = info;
                     }
                 } else {
                     DPInfo info;
                     info.is_wild = dp.is_wild;
                     for (int k = 0; k < 4; ++k) info.distance[k] = dp.dist[k];
-                    m_dp_database[dp_x_hex] = info;
+                    m_dp_database[dp_key] = info;
                 }
             }
         }

@@ -92,6 +92,18 @@ Chave (HEX): {priv_hex}
         print("\n" + "="*70 + "\n" + content + "\n" + f"✅ Salvo em: {FOUND_FILE}\n" + "="*70 + "\n")
 
     # 5. Launch solvers per GPU
+    # Decompress pubkey if compressed 66 hex
+    decompressed_pub = TARGET_PUBKEY
+    if len(TARGET_PUBKEY) == 66 and TARGET_PUBKEY[:2] in ("02", "03"):
+        p_secp = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F
+        prefix = TARGET_PUBKEY[:2]
+        x_val = int(TARGET_PUBKEY[2:], 16)
+        y_sq = (pow(x_val, 3, p_secp) + 7) % p_secp
+        y_val = pow(y_sq, (p_secp + 1) // 4, p_secp)
+        if (prefix == "03" and y_val % 2 == 0) or (prefix == "02" and y_val % 2 != 0):
+            y_val = p_secp - y_val
+        decompressed_pub = f"{x_val:064x}{y_val:064x}"
+
     print("\n🚀 Iniciando Kangaroo Solver nas GPUs...")
     processes = []
     for gpu_id in range(num_gpus):
@@ -99,7 +111,7 @@ Chave (HEX): {priv_hex}
             BINARY,
             '--solver', 'kangaroo',
             '--range', RANGE_STR,
-            '--target-pubkey', TARGET_PUBKEY,
+            '--target-pubkey', decompressed_pub,
             '--address', TARGET_ADDR,
             '--dp-bits', str(DP_BITS),
             '--grid', GRID,

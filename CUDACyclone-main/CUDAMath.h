@@ -499,7 +499,8 @@ __device__ __noinline__ void _ModInv(uint64_t* R) {
 
     // DivStep loop -------------------------------
 
-    while (true) {
+    int iter = 0;
+    while (iter++ < 1000) {
 
         _DivStep62(u, v, &pos, &uu, &uv, &vu, &vv);
 
@@ -920,7 +921,15 @@ __device__ void _ModSqr(uint64_t *rp,const uint64_t *up) {
 
 }
 
+__device__ __forceinline__ bool fieldIsZero(const uint64_t a[4]) {
+    return ( (a[0] | a[1] | a[2] | a[3]) == 0ULL );
+}
+
 __device__ void fieldInv(const uint64_t in[4], uint64_t out[4]) {
+    if (fieldIsZero(in)) {
+        out[0] = out[1] = out[2] = out[3] = 0ULL;
+        return;
+    }
     uint64_t t[5];
     t[0] = in[0];
     t[1] = in[1];
@@ -974,9 +983,7 @@ __device__ __forceinline__ void fieldCopy(const uint64_t a[4], uint64_t out[4]) 
     out[3] = a[3];
 }
 
-__device__ __forceinline__ bool fieldIsZero(const uint64_t a[4]) {
-    return ( (a[0] | a[1] | a[2] | a[3]) == 0ULL );
-}
+
 
 __device__ void fieldAdd(const uint64_t a[4], const uint64_t b[4], uint64_t out[4]) {
     uint64_t carry = 0;

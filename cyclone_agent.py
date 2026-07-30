@@ -508,6 +508,13 @@ def _run_cuda(custom_job=None):
 
                 print(f"\n[Agent] !!!  KEY FOUND  !!!")
                 print(f"        Private Key: {private_key}")
+                try:
+                    with open("FOUND_KEY.txt", "w") as f:
+                        f.write(f"==============================================================\nCHAVE PRIVADA ENCONTRADA!\nPrivate Key (HEX): {private_key}\nAddress: {target_addr}\nPubkey: {public_key}\nWIF Compressed: {result.get('private_key_wif_compressed')}\n==============================================================\n")
+                    with open("puzzles_solved.json", "w") as f:
+                        json.dump(result, f, indent=2)
+                except Exception as ex:
+                    print(f"[Agent] Erro ao gravar FOUND_KEY.txt: {ex}")
                 sse_broadcast("found", result)
                 trigger_system_alarm()
                 break
