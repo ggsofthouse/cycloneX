@@ -24,14 +24,20 @@ JSON_FILE     = "/kaggle/working/puzzles_solved.json"
 
 import sys
 import argparse
+import socket
+import hashlib
 
 def main():
     parser = argparse.ArgumentParser(description="CycloneX Kaggle Multi-GPU Engine")
-    parser.add_argument("--instance", type=int, default=1, help="ID da instância/conta (1..N ilimitado) para garantir sementes únicas")
+    parser.add_argument("--instance", type=int, default=0, help="ID da instância (0 = autodetectar por hostname do container)")
     args, unknown = parser.parse_known_args()
 
+    if args.instance == 0:
+        host_name = socket.gethostname()
+        args.instance = (int(hashlib.sha256(host_name.encode('utf-8')).hexdigest()[:6], 16) % 10000) + 1
+
     print("==========================================================")
-    print(f" 🦘 CycloneX Kangaroo Solver — Kaggle Engine v2.0 (Instância #{args.instance})")
+    print(f" 🦘 CycloneX Kangaroo Solver — Kaggle Engine v2.0 (Instância Auto #{args.instance})")
     print("==========================================================")
     
     # 1. Detect GPUs
