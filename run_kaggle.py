@@ -22,9 +22,16 @@ SLICES        = 256
 FOUND_FILE    = "/kaggle/working/FOUND_KEY.txt"
 JSON_FILE     = "/kaggle/working/puzzles_solved.json"
 
+import sys
+import argparse
+
 def main():
+    parser = argparse.ArgumentParser(description="CycloneX Kaggle Multi-GPU Engine")
+    parser.add_argument("--instance", type=int, default=1, help="ID da instância/conta (1..8) para garantir sementes únicas")
+    args, unknown = parser.parse_known_args()
+
     print("==========================================================")
-    print(" 🦘 CycloneX Kangaroo Solver — Kaggle Engine v2.0")
+    print(f" 🦘 CycloneX Kangaroo Solver — Kaggle Engine v2.0 (Instância #{args.instance})")
     print("==========================================================")
     
     # 1. Detect GPUs
