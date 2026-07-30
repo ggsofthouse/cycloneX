@@ -19,8 +19,9 @@ DP_BITS       = 26
 GRID          = "512,1024"
 SLICES        = 256
 
-FOUND_FILE    = "/kaggle/working/FOUND_KEY.txt"
-JSON_FILE     = "/kaggle/working/puzzles_solved.json"
+WORK_DIR      = "/kaggle/working" if os.path.exists("/kaggle/working") else os.getcwd()
+FOUND_FILE    = os.path.join(WORK_DIR, "FOUND_KEY.txt")
+JSON_FILE     = os.path.join(WORK_DIR, "puzzles_solved.json")
 
 import sys
 import argparse
