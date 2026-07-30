@@ -1,3 +1,4 @@
+#pragma once
 #define NBBLOCK 5
 #define BIFULLSIZE 40
 

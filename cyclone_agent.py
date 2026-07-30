@@ -43,6 +43,23 @@ def find_exe():
 
 CUDA_EXE = find_exe()
 
+SECP256K1_P = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F
+
+def decompress_pubkey(pubkey_hex):
+    """Decompress 66-hex compressed Secp256k1 public key to 128-hex uncompressed (X+Y)."""
+    pubkey_hex = pubkey_hex.strip()
+    if len(pubkey_hex) == 66 and pubkey_hex[:2] in ("02", "03"):
+        prefix = pubkey_hex[:2]
+        x = int(pubkey_hex[2:], 16)
+        y_sq = (pow(x, 3, SECP256K1_P) + 7) % SECP256K1_P
+        y = pow(y_sq, (SECP256K1_P + 1) // 4, SECP256K1_P)
+        if (prefix == "03" and y % 2 == 0) or (prefix == "02" and y % 2 != 0):
+            y = SECP256K1_P - y
+        return f"{x:064x}{y:064x}"
+    elif len(pubkey_hex) == 130 and pubkey_hex[:2] in ("04", "0X"):
+        return pubkey_hex[2:]
+    return pubkey_hex
+
 # ── PARSER DE CONFIG YAML SIMPLES ────────────────────────────────────────────
 def load_config(path=None):
     if path is None:
@@ -300,6 +317,8 @@ def _run_cuda(custom_job=None):
     solver_name = str(job.get("solver", "bruteforce"))
     kangaroo_dp_bits = int(job.get("dp_bits", 20))
     target_pubkey = str(job.get("target_pubkey", ""))
+    if target_pubkey:
+        target_pubkey = decompress_pubkey(target_pubkey)
 
     cmd = [
         CUDA_EXE,
@@ -310,7 +329,7 @@ def _run_cuda(custom_job=None):
         "--gpus",    gpus_str,
         "--solver",  solver_name,
     ]
-    if random_mode:
+    if random_mode and solver_name != "kangaroo":
         cmd.append("--random")
     if target_pubkey:
         cmd.extend(["--target-pubkey", target_pubkey])
@@ -702,8 +721,11 @@ def _pool_worker_loop():
         custom_job = {
             "range": f"{start_hex}:{end_hex}",
             "address": address,
+            "solver": job_cfg.get("solver", "bruteforce"),
+            "target_pubkey": job_cfg.get("target_pubkey", ""),
+            "dp_bits": job_cfg.get("dp_bits", 24),
             "grid": job_cfg.get("grid", "512,1024"),
-            "slices": job_cfg.get("slices", 512),
+            "slices": job_cfg.get("slices", 256),
             "gpus": job_cfg.get("gpus", "0"),
             "random": random_in_block,
             "key_limit": key_limit,
@@ -1460,6 +1482,9 @@ class CycloneHandler(BaseHTTPRequestHandler):
                         "block_id": block_id,
                         "range": {"start": start_hex, "end": end_hex},
                         "address": address,
+                        "solver": job_cfg.get("solver", "bruteforce"),
+                        "target_pubkey": job_cfg.get("target_pubkey", ""),
+                        "dp_bits": job_cfg.get("dp_bits", 24),
                         "active_hypothesis": active_hypothesis
                     })
                 else:
@@ -1470,7 +1495,8 @@ class CycloneHandler(BaseHTTPRequestHandler):
                     end_val = int(parts[1].strip(), 16)
                     
                     total_keys = end_val - start_val + 1
-                    total_blocks = max(1, total_keys // block_size)
+                    max_sqlite_int = (1 << 62) - 1
+                    total_blocks = min(max_sqlite_int, max(1, total_keys // block_size))
                     
                     import random
                     candidates = []
@@ -1576,6 +1602,9 @@ class CycloneHandler(BaseHTTPRequestHandler):
                             "block_id": block_id,
                             "range": {"start": start_hex, "end": end_hex},
                             "address": address,
+                            "solver": job_cfg.get("solver", "bruteforce"),
+                            "target_pubkey": job_cfg.get("target_pubkey", ""),
+                            "dp_bits": job_cfg.get("dp_bits", 24),
                             "active_hypothesis": active_hypothesis
                         })
                 conn.close()
@@ -1835,7 +1864,10 @@ def main():
 
     # Inicializar Pool Engine
     pool_cfg = cfg.get("pool", {})
+    job_cfg = cfg.get("job", {})
     role = pool_cfg.get("role", "standalone")
+    if job_cfg.get("solver") == "kangaroo":
+        role = "standalone"
     
     if role == "master":
         print(f"[Pool] Modo MASTER ativo.")

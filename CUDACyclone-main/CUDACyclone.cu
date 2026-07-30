@@ -24,6 +24,7 @@
 #include "CUDAHash.cuh"
 #include "CUDAUtils.h"
 #include "CUDAStructures.h"
+#include "KangarooSolver.cu"
 
 static volatile sig_atomic_t g_sigint = 0;
 static void handle_sigint(int) { g_sigint = 1; }
@@ -874,6 +875,9 @@ int main(int argc, char** argv) {
     std::signal(SIGINT, handle_sigint);
 
     std::string target_hash_hex, range_hex, address_b58;
+    std::string solver_name = "bruteforce";
+    std::string target_pubkey_hex = "";
+    int         kangaroo_dp_bits  = 0;
     uint32_t runtime_points_batch_size = 128;
     uint32_t runtime_batches_per_sm    = 8;
     uint32_t slices_per_launch         = 64;
@@ -908,6 +912,7 @@ int main(int argc, char** argv) {
                       << "\n"
                       << "Usage: " << argv[0]
                       << " --range <start_hex>:<end_hex> --address <base58>\n"
+                      << "       [--solver bruteforce|kangaroo] [--target-pubkey <hex>] [--dp-bits N]\n"
                       << "       [--grid A,B] [--slices N] [--gpus all|0|0,1] [--random]\n"
                       << "\n"
                       << "Required:\n"
@@ -916,25 +921,22 @@ int main(int argc, char** argv) {
                       << "  --target-hash160 <hex>     Alternative to --address (raw hash160)\n"
                       << "\n"
                       << "Options:\n"
+                      << "  --solver <name>            Solver algorithm (bruteforce, kangaroo)\n"
+                      << "  --target-pubkey <hex>      Target Public Key for Kangaroo algorithm\n"
+                      << "  --dp-bits <N>              Distinguished point bits for Kangaroo algorithm\n"
                       << "  --grid <P,T>               Points per batch, threads per block (e.g. 512,256)\n"
                       << "  --slices <N>                Batches per thread per kernel launch\n"
                       << "  --gpus <all|0|0,1>         Select which GPUs to use (default: all)\n"
                       << "  --random                   Lottery mode: random jumps across the range\n"
-                      << "  -h, --help                 Show this help\n"
-                      << "\n"
-                      << "Examples:\n"
-                      << "  ./CUDACyclone --range 200000000:3FFFFFFFF --address 1HBtAp... --grid 128,128\n"
-                      << "  ./CUDACyclone --range 200000000:3FFFFFFFF --address 1HBtAp... --gpus 0,1 --random --slices 16\n"
-                      << "  ./CUDACyclone --range 200000000:3FFFFFFFF --address 1HBtAp... --gpus 0\n"
-                      << "\n"
-                      << "Multi-GPU: auto-detects all CUDA GPUs. Use --gpus to select specific ones.\n"
-                      << "Random mode: each GPU independently jumps to random positions.\n"
-                      << "Proof test: python3 proof.py --range 200000000:3FFFFFFFF --grid 128,128\n";
+                      << "  -h, --help                 Show this help\n";
             return EXIT_SUCCESS;
         }
-        if      (arg == "--target-hash160" && i + 1 < argc) target_hash_hex = argv[++i];
-        else if (arg == "--address"        && i + 1 < argc) address_b58     = argv[++i];
-        else if (arg == "--range"          && i + 1 < argc) range_hex       = argv[++i];
+        if      (arg == "--target-hash160" && i + 1 < argc) target_hash_hex  = argv[++i];
+        else if (arg == "--address"        && i + 1 < argc) address_b58      = argv[++i];
+        else if (arg == "--range"          && i + 1 < argc) range_hex        = argv[++i];
+        else if (arg == "--solver"         && i + 1 < argc) solver_name      = argv[++i];
+        else if (arg == "--target-pubkey"  && i + 1 < argc) target_pubkey_hex= argv[++i];
+        else if (arg == "--dp-bits"        && i + 1 < argc) kangaroo_dp_bits = std::atoi(argv[++i]);
         else if (arg == "--grid"           && i + 1 < argc) {
             uint32_t a=0,b=0;
             if (!parse_grid(argv[++i], a, b)) {
@@ -960,6 +962,50 @@ int main(int argc, char** argv) {
         else if (arg == "--random") {
             random_mode = true;
         }
+    }
+
+    if (solver_name == "kangaroo") {
+        if (range_hex.empty() || target_pubkey_hex.empty()) {
+            std::cerr << "Error: --solver kangaroo requires --range <start:end> and --target-pubkey <hex>\n";
+            return EXIT_FAILURE;
+        }
+        size_t colon_pos = range_hex.find(':');
+        if (colon_pos == std::string::npos) { std::cerr << "Error: range format must be start:end\n"; return EXIT_FAILURE; }
+        std::string start_hex = range_hex.substr(0, colon_pos);
+        std::string end_hex   = range_hex.substr(colon_pos + 1);
+
+        uint64_t r_start[4]{0}, r_end[4]{0};
+        if (!hexToLE64(start_hex, r_start) || !hexToLE64(end_hex, r_end)) {
+            std::cerr << "Error: invalid range hex\n"; return EXIT_FAILURE;
+        }
+
+        cyclone::SolverJobParams params{};
+        for (int k = 0; k < 4; ++k) {
+            params.range_start[k] = r_start[k];
+            params.range_end[k]   = r_end[k];
+        }
+        std::memset(params.target_pubkey, 0, sizeof(params.target_pubkey));
+        std::strncpy((char*)params.target_pubkey, target_pubkey_hex.c_str(), sizeof(params.target_pubkey) - 1);
+        params.target_pubkey_len = (int)target_pubkey_hex.length();
+        params.kangaroo_dp_bits  = kangaroo_dp_bits;
+        params.slices_per_launch = slices_per_launch;
+        params.batch_size        = runtime_points_batch_size * 256;
+
+        cyclone::KangarooSolver solver;
+        if (!solver.initialize(params)) {
+            std::cerr << "Failed to initialize KangarooSolver.\n";
+            return EXIT_FAILURE;
+        }
+        std::cout << "[CUDACyclone] Executando KangarooSolver no GPU...\n";
+        bool success = solver.execute();
+        if (success) {
+            auto stats = solver.statistics();
+            std::cout << "\n[CUDACyclone] KEY FOUND! Private key: " 
+                      << formatHex256(stats.found_private_key) << std::endl;
+        } else {
+            std::cout << "\n[CUDACyclone] Kangaroo solver finalizado sem resultado.\n";
+        }
+        return success ? EXIT_SUCCESS : EXIT_FAILURE;
     }
 
     if (range_hex.empty() || (target_hash_hex.empty() && address_b58.empty())) {

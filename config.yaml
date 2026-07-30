@@ -1,13 +1,13 @@
 job:
-  range: "400000000000000000:7fffffffffffffffff"
-  address: "1PWo3JeB9jrGwfHDNpdGK54CRas7fsVzXU"
+  range: "800000000000000000000000000000000000:ffffffffffffffffffffffffffffffffffff"
+  address: "1QKBaU6WAeycb3DbKbLBkX7vJiaS8r42Xo"
   grid: "256,512"
   slices: 256
   random: false
   gpus: "0"
-  solver: "bruteforce"          # bruteforce, kangaroo, rho, bsgs
-  dp_bits: 20                  # Bits para Distinguished Points no Kangaroo (ex: 20)
-  target_pubkey: ""            # Chave pública em hexadecimal (para Kangaroo/BSGS)
+  solver: "kangaroo"           # bruteforce, kangaroo, rho, bsgs
+  dp_bits: 24                  # Bits para Distinguished Points no Kangaroo (ex: 20-26)
+  target_pubkey: "031f6a332d3c5c4f2de2378c012f429cd109ba07d69690c6c701b6bb87860d6640"
 
 gpu:
   max_temp_c: 78
@@ -23,7 +23,7 @@ database:
   path: "./cyclone.db"
 
 pool:
-  role: "master"
+  role: "standalone"
   master_url: "http://localhost:8080"
   block_size_gkeys: 200
   random_in_block: false

@@ -1,6 +1,12 @@
+#pragma once
 #if defined(_MSC_VER) && !defined(__CUDA_ARCH__)
 #include <intrin.h>
 #endif
+
+#include <cstdint>
+#include <string>
+#include <sstream>
+#include <iomanip>
 
 __host__ __forceinline__ void add256_u64(const uint64_t a[4], uint64_t b, uint64_t out[4]) {
     out[0] = a[0] + b;

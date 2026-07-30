@@ -15,6 +15,7 @@ namespace cyclone {
 struct DeviceWalker {
     uint64_t X[4];
     uint64_t Y[4];
+    uint64_t Z[4];
     uint64_t dist[4];
     int is_wild;
 };
@@ -30,6 +31,46 @@ struct DeviceDP {
 __constant__ uint64_t c_jump_X[32 * 4];
 __constant__ uint64_t c_jump_Y[32 * 4];
 __constant__ uint64_t c_jump_sizes[32 * 4];
+
+// Adição mista Jacobiana (P_Jacobian + J_Affine) sem inversão modular (0 invMod!)
+__device__ __forceinline__ void pointAddMixedJacobian(
+    const uint64_t X1[4], const uint64_t Y1[4], const uint64_t Z1[4],
+    const uint64_t x2[4], const uint64_t y2[4],
+    uint64_t X3[4], uint64_t Y3[4], uint64_t Z3[4]
+) {
+    uint64_t z1_sq[4], z1_cub[4], u2[4], s2[4];
+    uint64_t h[4], r[4], h_sq[4], h_cub[4], v[4];
+    uint64_t t1[4], t2[4];
+
+    fieldSqr(Z1, z1_sq);
+    fieldMul(z1_sq, Z1, z1_cub);
+
+    fieldMul(x2, z1_sq, u2);
+    fieldMul(y2, z1_cub, s2);
+
+    fieldSub(u2, X1, h);
+    fieldSub(s2, Y1, r);
+
+    fieldSqr(h, h_sq);
+    fieldMul(h_sq, h, h_cub);
+
+    fieldMul(X1, h_sq, v);
+
+    // X3 = R^2 - H^3 - 2*V
+    fieldSqr(r, t1);
+    fieldSub(t1, h_cub, t2);
+    fieldAdd(v, v, t1);
+    fieldSub(t2, t1, X3);
+
+    // Y3 = R * (V - X3) - Y1 * H^3
+    fieldSub(v, X3, t1);
+    fieldMul(r, t1, t2);
+    fieldMul(Y1, h_cub, t1);
+    fieldSub(t2, t1, Y3);
+
+    // Z3 = Z1 * H
+    fieldMul(Z1, h, Z3);
+}
 
 // Função de device auxiliar para somar inteiros de 256 bits
 __device__ __forceinline__ void add256_device(const uint64_t a[4], const uint64_t b[4], uint64_t out[4]) {
@@ -95,10 +136,15 @@ __global__ void init_walkers_kernel(
         fieldCopy(ptR.Y, w.Y);
         fieldCopy(scalar, w.dist);
     }
+    // Converter de Afim para Jacobiano (Z = 1)
+    w.Z[0] = 1ULL;
+    w.Z[1] = 0ULL;
+    w.Z[2] = 0ULL;
+    w.Z[3] = 0ULL;
     walkers[gid] = w;
 }
 
-// Walk Kernel executado na GPU
+// Walk Kernel executado na GPU em Coordenadas Jacobianas (ZERO Inversões Modulares no Hot-Loop)
 __global__ void kernel_kangaroo_walk(
     DeviceWalker* walkers,
     uint32_t num_walkers,
@@ -111,65 +157,59 @@ __global__ void kernel_kangaroo_walk(
     uint32_t gid = blockIdx.x * blockDim.x + threadIdx.x;
     if (gid >= num_walkers) return;
 
-    // Carregar estado do walker em registradores
     DeviceWalker w = walkers[gid];
-    ECPointA P;
-    fieldCopy(w.X, P.X);
-    fieldCopy(w.Y, P.Y);
-    P.infinity = false;
-
-    uint64_t dist[4];
+    uint64_t PX[4], PY[4], PZ[4], dist[4];
+    fieldCopy(w.X, PX);
+    fieldCopy(w.Y, PY);
+    fieldCopy(w.Z, PZ);
     fieldCopy(w.dist, dist);
 
     for (uint32_t step = 0; step < steps_per_launch; ++step) {
-        // Escolha pseudo-aleatória do salto com base nas coordenadas atuais (5 bits do X[0])
-        uint32_t idx = (uint32_t)(P.X[0] & 31);
+        uint32_t idx = (uint32_t)(PX[0] & 31);
 
-        // Carregar ponto de salto e tamanho do salto da Constant Memory
-        ECPointA J;
-        J.X[0] = c_jump_X[idx * 4 + 0];
-        J.X[1] = c_jump_X[idx * 4 + 1];
-        J.X[2] = c_jump_X[idx * 4 + 2];
-        J.X[3] = c_jump_X[idx * 4 + 3];
+        uint64_t JX[4], JY[4], jsize[4];
+        #pragma unroll
+        for (int k = 0; k < 4; ++k) {
+            JX[k] = c_jump_X[idx * 4 + k];
+            JY[k] = c_jump_Y[idx * 4 + k];
+            jsize[k] = c_jump_sizes[idx * 4 + k];
+        }
 
-        J.Y[0] = c_jump_Y[idx * 4 + 0];
-        J.Y[1] = c_jump_Y[idx * 4 + 1];
-        J.Y[2] = c_jump_Y[idx * 4 + 2];
-        J.Y[3] = c_jump_Y[idx * 4 + 3];
-        J.infinity = false;
+        uint64_t RX[4], RY[4], RZ[4];
+        pointAddMixedJacobian(PX, PY, PZ, JX, JY, RX, RY, RZ);
 
-        // Somar ponto de salto
-        ECPointA R;
-        pointAddAffine(P, J, R);
-        P = R;
+        fieldCopy(RX, PX);
+        fieldCopy(RY, PY);
+        fieldCopy(RZ, PZ);
 
-        // Atualizar distância acumulada
-        uint64_t jsize[4];
-        jsize[0] = c_jump_sizes[idx * 4 + 0];
-        jsize[1] = c_jump_sizes[idx * 4 + 1];
-        jsize[2] = c_jump_sizes[idx * 4 + 2];
-        jsize[3] = c_jump_sizes[idx * 4 + 3];
         add256_device(dist, jsize, dist);
 
-        // Verificar se é Distinguished Point (bits de X são zero)
-        if ((P.X[0] & dp_mask) == 0ULL) {
+        // Verificar Distinguished Point em coordenadas Jacobianas (0 inversões no loop)
+        if ((PX[0] & dp_mask) == 0ULL) {
+            // Normalizar para Afim somente ao reportar DP
+            uint64_t invZ[4], invZ2[4], invZ3[4], affX[4], affY[4];
+            fieldInv(PZ, invZ);
+            fieldSqr(invZ, invZ2);
+            fieldMul(invZ2, invZ, invZ3);
+            fieldMul(PX, invZ2, affX);
+            fieldMul(PY, invZ3, affY);
+
             uint32_t out_idx = atomicAdd(out_dp_count, 1);
             if (out_idx < max_dps) {
                 DeviceDP dp;
-                fieldCopy(P.X, dp.X);
-                fieldCopy(P.Y, dp.Y);
+                fieldCopy(affX, dp.X);
+                fieldCopy(affY, dp.Y);
                 fieldCopy(dist, dp.dist);
                 dp.is_wild = w.is_wild;
                 out_dps[out_idx] = dp;
             }
-            // Quebra o loop para reportar o DP e re-inicializar
             break;
         }
     }
 
-    // Salvar o estado do walker de volta
-    fieldCopy(P.X, w.X);
-    fieldCopy(P.Y, w.Y);
+    fieldCopy(PX, w.X);
+    fieldCopy(PY, w.Y);
+    fieldCopy(PZ, w.Z);
     fieldCopy(dist, w.dist);
     walkers[gid] = w;
 }
@@ -195,11 +235,6 @@ bool KangarooSolver::execute() {
 
     std::cout << "[Kangaroo] Inicializando Pollard's Kangaroo Solver..." << std::endl;
 
-    // Configurações do Distinguished Point bits
-    int dp_bits = m_params.kangaroo_dp_bits > 0 ? m_params.kangaroo_dp_bits : 20;
-    uint64_t dp_mask = (1ULL << dp_bits) - 1;
-    std::cout << "[Kangaroo] DP Bits: " << dp_bits << " | Walkers/Thread: 1" << std::endl;
-
     // 1. Inicializar Jump Table
     std::vector<uint64_t> h_jump_sizes(32 * 4, 0);
     
@@ -219,11 +254,26 @@ bool KangarooSolver::execute() {
     int jump_start_bit = (bit_len / 2) - 4;
     if (jump_start_bit < 0) jump_start_bit = 0;
 
-    std::cout << "[Kangaroo] Bit-length do range: " << bit_len << " | Saltos partindo de 2^" << jump_start_bit << std::endl;
+    int default_dp = (bit_len > 80) ? std::min(26, std::max(20, bit_len / 5)) : 20;
+    int dp_bits = m_params.kangaroo_dp_bits > 0 ? m_params.kangaroo_dp_bits : default_dp;
+    uint64_t dp_mask = (1ULL << dp_bits) - 1;
 
-    // Gerar jump sizes no host
+    std::cout << "[Kangaroo] Bit-length do range: " << bit_len 
+              << " | Saltos partindo de 2^" << jump_start_bit 
+              << " | DP Bits: " << dp_bits << std::endl;
+
+    // Gerar jump sizes no host (corrigido para inteiros de 256-bit em 4 limbs)
     for (uint32_t i = 0; i < 32; ++i) {
-        h_jump_sizes[i * 4 + 0] = (1ULL << (jump_start_bit + (i % 8))) + (i * 137 + 1);
+        int target_bit = jump_start_bit + (i % 16);
+        if (target_bit < 0) target_bit = 0;
+        if (target_bit > 250) target_bit = 250;
+
+        int limb = target_bit / 64;
+        int bit_shift = target_bit % 64;
+
+        for (int k = 0; k < 4; ++k) h_jump_sizes[i * 4 + k] = 0;
+        h_jump_sizes[i * 4 + limb] = (1ULL << bit_shift);
+        h_jump_sizes[i * 4 + 0] += (i * 137 + 1);
     }
 
     // Alocar buffers temporários na GPU para computar os pontos correspondentes na curva elíptica
@@ -257,12 +307,17 @@ bool KangarooSolver::execute() {
 
     // Tame public key target
     uint64_t tame_pubkey_X[4]{0}, tame_pubkey_Y[4]{0};
-    if (m_params.target_pubkey_len >= 128) {
-        std::string pk_str((char*)m_params.target_pubkey, 128);
+    std::string pk_str((char*)m_params.target_pubkey, m_params.target_pubkey_len);
+    if (pk_str.length() == 130 && pk_str[0] == '0' && (pk_str[1] == '4' || pk_str[1] == 'X')) {
+        hexToLE64(pk_str.substr(2, 64), tame_pubkey_X);
+        hexToLE64(pk_str.substr(66, 64), tame_pubkey_Y);
+    } else if (pk_str.length() == 128) {
         hexToLE64(pk_str.substr(0, 64), tame_pubkey_X);
         hexToLE64(pk_str.substr(64, 64), tame_pubkey_Y);
-    } else if (m_params.target_pubkey_len >= 64) {
-        hexToLE64(std::string((char*)m_params.target_pubkey, 64), tame_pubkey_X);
+    } else if (pk_str.length() == 66 && pk_str[0] == '0' && (pk_str[1] == '2' || pk_str[1] == '3')) {
+        hexToLE64(pk_str.substr(2, 64), tame_pubkey_X);
+    } else if (pk_str.length() == 64) {
+        hexToLE64(pk_str, tame_pubkey_X);
     } else {
         tame_pubkey_X[0] = 0xabcdefULL; // Fallback mock
     }
@@ -299,7 +354,7 @@ bool KangarooSolver::execute() {
 
     std::vector<DeviceDP> h_dps(max_dps);
     auto t_start = std::chrono::high_resolution_clock::now();
-    uint32_t steps_per_launch = 256;
+    uint32_t steps_per_launch = m_params.slices_per_launch > 0 ? m_params.slices_per_launch * 16 : 4096;
 
     std::cout << "[Kangaroo] Walk iniciado!" << std::endl;
 
@@ -335,7 +390,7 @@ bool KangarooSolver::execute() {
                 auto it = m_dp_database.find(dp_x_hex);
                 if (it != m_dp_database.end()) {
                     const auto& existing = it->second;
-                    if (existing.is_wild != dp.is_wild) {
+                    if ((existing.is_wild ? 1 : 0) != (dp.is_wild ? 1 : 0)) {
                         std::cout << "\n[Kangaroo] !!! COLISÃO ENCONTRADA !!!" << std::endl;
                         
                         uint64_t priv_key[4]{0};
@@ -371,7 +426,7 @@ bool KangarooSolver::execute() {
                   << " | Chunks: " << std::setw(6) << m_dp_database.size() << "   ";
         std::cout.flush();
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
     }
 
     std::cout << std::endl;
