@@ -141,26 +141,38 @@ __global__ void init_walkers_kernel(
         add256(range_start, scalar, wild_scalar);
         scalarMulBaseAffine(wild_scalar, w.X, w.Y);
         fieldCopy(wild_scalar, w.dist);
-    } else {
-        // Tame kangaroo: inicia em Y + s_i * G
-        uint64_t tempX[4], tempY[4];
+        // Tame kangaroo: inicia em Y - s_i * G => dist_T = -s_i mod N
+        uint64_t tempX[4], tempY[4], negY[4];
         scalarMulBaseAffine(scalar, tempX, tempY);
 
-        // Somar chave pública Y + temp_point
+        // Inverter coordenadas Y para subtracao de pontos
+        const uint64_t SECP_P_LE[4] = {
+            0xFFFFFC2F00000001ULL, 0xFFFFFFFFFFFFFFFFULL,
+            0xFFFFFFFFFFFFFFFFULL, 0xFFFFFFFFFFFFFFFFULL
+        };
+        sub256(SECP_P_LE, tempY, negY);
+
+        // Somar chave pública Y + (-temp_point)
         ECPointA ptY, ptTemp, ptR;
         fieldCopy(tame_pub_X, ptY.X);
         fieldCopy(tame_pub_Y, ptY.Y);
         ptY.infinity = false;
 
         fieldCopy(tempX, ptTemp.X);
-        fieldCopy(tempY, ptTemp.Y);
+        fieldCopy(negY, ptTemp.Y);
         ptTemp.infinity = false;
 
         pointAddAffine(ptY, ptTemp, ptR);
 
         fieldCopy(ptR.X, w.X);
         fieldCopy(ptR.Y, w.Y);
-        fieldCopy(scalar, w.dist);
+        
+        // dist_T = -scalar mod N
+        const uint64_t SECP_N_LE[4] = {
+            0xBFD25E8CD0364141ULL, 0xBAAEDCE6AF48A03BULL,
+            0xFFFFFFFFFFFFFFFFULL, 0xFFFFFFFFFFFFFFFFULL
+        };
+        sub256(SECP_N_LE, scalar, w.dist);
     }
     // Iniciar Z = 1 (ponto afim -> Jacobiano)
     w.Z[0] = 1ULL;
@@ -242,21 +254,22 @@ __global__ void kernel_kangaroo_walk(
         __syncwarp();
 
         if (active) {
-            uint64_t inv_dx[4], lambda[4], lam2[4], tmp[4], RX[4], RY[4];
-            for (int k = 0; k < 4; ++k) inv_dx[k] = s_inv[tid][k];
+            ECPointA ptP, ptJ, ptR;
+            fieldCopy(PX, ptP.X);
+            fieldCopy(PY, ptP.Y);
+            ptP.infinity = false;
 
-            fieldMul(dy, inv_dx, lambda);             // lambda = (JY - PY) / (JX - PX)
-            fieldSqr(lambda, lam2);                    // lambda^2
-            fieldSub(lam2, PX, tmp);                   // lambda^2 - PX
-            fieldSub(tmp, JX, RX);                     // RX = lambda^2 - PX - JX
+            fieldCopy(JX, ptJ.X);
+            fieldCopy(JY, ptJ.Y);
+            ptJ.infinity = false;
 
-            fieldSub(PX, RX, tmp);                     // PX - RX
-            fieldMul(lambda, tmp, tmp);                // lambda * (PX - RX)
-            fieldSub(tmp, PY, RY);                     // RY = lambda * (PX - RX) - PY
+            pointAddAffine(ptP, ptJ, ptR);
 
-            fieldCopy(RX, PX);
-            fieldCopy(RY, PY);
-            add256_device(dist, jsize, dist);
+            fieldCopy(ptR.X, PX);
+            fieldCopy(ptR.Y, PY);
+
+            // Somar tamanho do salto a distancia acumulada do canguru
+            add256(dist, jsize, dist);
 
             // DP check em coordenadas afins puras (100% invariante)
             if ((PX[0] & dp_mask) == 0ULL) {
