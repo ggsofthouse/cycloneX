@@ -9,6 +9,7 @@
 #include <cuda_runtime.h>
 #include <algorithm>
 #include <array>
+#include <fstream>
 
 namespace cyclone {
 
@@ -687,10 +688,35 @@ bool KangarooSolver::execute() {
 }
 
 bool KangarooSolver::save_checkpoint(const std::string& path) {
+    std::lock_guard<std::mutex> lk(m_dp_mutex);
+    std::ofstream os(path, std::ios::binary);
+    if (!os.is_open()) return false;
+    uint64_t count = m_dp_database.size();
+    os.write((const char*)&count, sizeof(count));
+    for (const auto& kv : m_dp_database) {
+        os.write((const char*)kv.first.data(), 4 * sizeof(uint64_t));
+        os.write((const char*)&kv.second.is_wild, sizeof(bool));
+        os.write((const char*)kv.second.distance, 4 * sizeof(uint64_t));
+        os.write((const char*)kv.second.Y, 4 * sizeof(uint64_t));
+    }
     return true;
 }
 
 bool KangarooSolver::load_checkpoint(const std::string& path) {
+    std::lock_guard<std::mutex> lk(m_dp_mutex);
+    std::ifstream is(path, std::ios::binary);
+    if (!is.is_open()) return false;
+    uint64_t count = 0;
+    is.read((char*)&count, sizeof(count));
+    for (uint64_t i = 0; i < count; ++i) {
+        std::array<uint64_t, 4> key;
+        DPInfo info;
+        is.read((char*)key.data(), 4 * sizeof(uint64_t));
+        is.read((char*)&info.is_wild, sizeof(bool));
+        is.read((char*)info.distance, 4 * sizeof(uint64_t));
+        is.read((char*)info.Y, 4 * sizeof(uint64_t));
+        m_dp_database[key] = info;
+    }
     return true;
 }
 
