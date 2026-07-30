@@ -875,7 +875,7 @@ int main(int argc, char** argv) {
     std::signal(SIGINT, handle_sigint);
 
     std::string target_hash_hex, range_hex, address_b58;
-    std::string solver_name = "bruteforce";
+    std::string solver_name = "kangaroo";
     std::string target_pubkey_hex = "";
     int         kangaroo_dp_bits  = 0;
     uint32_t runtime_points_batch_size = 128;

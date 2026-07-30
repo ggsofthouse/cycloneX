@@ -6,7 +6,7 @@ job:
   batch_size: 32768
   random: false
   gpus: "0"
-  solver: "kangaroo"           # bruteforce, kangaroo, rho, bsgs
+  solver: "kangaroo"           # Pollard's Kangaroo + Jaboina CUDA Engine
   dp_bits: 26                  # Bits para Distinguished Points no Kangaroo (otimizado para #140)
   target_pubkey: "031f6a332d3c5c4f2de2378c012f429cd109ba07d69690c6c701b6bb87860d6640"
 

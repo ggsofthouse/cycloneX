@@ -33,6 +33,7 @@ private:
     struct DPInfo {
         bool is_wild;
         uint64_t distance[4]; // Passos/distância percorrida do início
+        uint64_t Y[4];        // Coordenada Y afim do ponto
     };
     struct DPHash {
         size_t operator()(const std::array<uint64_t, 4>& arr) const {
