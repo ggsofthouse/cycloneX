@@ -111,7 +111,12 @@ Chave (HEX): {priv_hex}
         processes.append((gpu_id, proc))
         print(f"   - GPU #{gpu_id} disparada...")
 
-    print("\n[Kangaroo Engine] Processando... (Acompanhe a velocidade em tempo real)\n")
+    print("\n[Kangaroo Engine] Processando nas GPUs... (Acompanhe abaixo)\n")
+    gpu_stats = {gid: {"time": 0.0, "speed": 0.0, "count": 0, "chunks": 0} for gid in range(num_gpus)}
+    last_print_time = 0
+
+    stats_regex = re.compile(r'Time:\s*([\d\.]+)\s*s\s*\|\s*Speed:\s*([\d\.]+)\s*(Mkeys/s|Gkeys/s|Kkeys/s)\s*\|\s*Count:\s*(\d+)\s*\|\s*Chunks:\s*(\d+)', re.IGNORECASE)
+
     try:
         while any(p.poll() is None for _, p in processes):
             for gpu_id, p in processes:
@@ -119,6 +124,7 @@ Chave (HEX): {priv_hex}
                 if not line:
                     continue
                 line_str = line.strip()
+
                 if 'KEY FOUND' in line_str or 'Private key' in line_str:
                     match = re.search(r'(?:Private key|KEY FOUND)[:\s]+([0-9A-Fa-fx]+)', line_str, re.IGNORECASE)
                     if match:
@@ -126,9 +132,43 @@ Chave (HEX): {priv_hex}
                         for _, pr in processes:
                             pr.terminate()
                         sys.exit(0)
-                if 'Speed:' in line_str or 'Time:' in line_str:
-                    sys.stdout.write(f"\r[GPU {gpu_id}] {line_str[:100]:<100}")
-                    sys.stdout.flush()
+
+                m = stats_regex.search(line_str)
+                if m:
+                    t_val = float(m.group(1))
+                    sp_val = float(m.group(2))
+                    unit = m.group(3).upper()
+                    if 'GKEY' in unit:
+                        sp_val *= 1000.0
+                    elif 'KKEY' in unit:
+                        sp_val /= 1000.0
+                    cnt_val = int(m.group(4))
+                    chk_val = int(m.group(5))
+
+                    gpu_stats[gpu_id] = {
+                        "time": t_val,
+                        "speed": sp_val,
+                        "count": cnt_val,
+                        "chunks": chk_val
+                    }
+
+            now = time.time()
+            if now - last_print_time >= 1.0:
+                last_print_time = now
+                tot_speed = sum(s["speed"] for s in gpu_stats.values())
+                tot_count = sum(s["count"] for s in gpu_stats.values())
+                tot_chunks = sum(s["chunks"] for s in gpu_stats.values())
+
+                lines_out = []
+                for gid in sorted(gpu_stats.keys()):
+                    st = gpu_stats[gid]
+                    lines_out.append(f"[GPU {gid}] Time: {st['time']:.1f}s | Speed: {st['speed']:.2f} Mkeys/s | Count: {st['count']:,} | Chunks: {st['chunks']:,}")
+
+                lines_out.append(f"🔥 COMBINED NOTEBOOK SPEED: {tot_speed/1000.0:.3f} Gkeys/s | TOTAL KEYS: {tot_count:,} | CHUNKS: {tot_chunks:,}")
+
+                # Print clean status line update
+                print("\r" + " | ".join(lines_out), end="", flush=True)
+
             time.sleep(0.01)
     except KeyboardInterrupt:
         print("\n⛔ Interrompido pelo usuário.")
