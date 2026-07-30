@@ -94,6 +94,13 @@ __global__ void init_jumps_kernel(const uint64_t* sizes, uint64_t* outX, uint64_
     scalarMulBaseAffine(sizes + idx * 4, outX + idx * 4, outY + idx * 4);
 }
 
+__device__ __forceinline__ uint64_t splitmix64_device(uint64_t state) {
+    uint64_t z = (state + 0x9e3779b97f4a7c15ULL);
+    z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ULL;
+    z = (z ^ (z >> 27)) * 0x94d049bb133111ebULL;
+    return z ^ (z >> 31);
+}
+
 // Kernel de Inicialização dos Walkers na GPU
 __global__ void init_walkers_kernel(
     DeviceWalker* walkers,
@@ -108,8 +115,11 @@ __global__ void init_walkers_kernel(
     DeviceWalker w;
     w.is_wild = (gid % 2 == 0) ? 0 : 1; // 50% tame, 50% wild
 
-    uint64_t scalar[4] = {0};
-    scalar[0] = seed + gid * 997ULL;
+    uint64_t r0 = splitmix64_device(seed + gid * 0x9e3779b97f4a7c15ULL);
+    uint64_t r1 = splitmix64_device(r0 ^ (gid * 0x140ULL));
+    uint64_t r2 = splitmix64_device(r1 ^ 0xabcdefULL);
+
+    uint64_t scalar[4] = {r0, r1, r2 & 0x0fffffffffffffffULL, 0};
 
     if (w.is_wild) {
         // Wild kangaroo: inicia em w_i * G
@@ -251,7 +261,7 @@ bool KangarooSolver::execute() {
             break;
         }
     }
-    int jump_start_bit = (bit_len / 2) - 4;
+    int jump_start_bit = (bit_len / 2) - 8;
     if (jump_start_bit < 0) jump_start_bit = 0;
 
     int default_dp = (bit_len > 80) ? std::min(26, std::max(20, bit_len / 5)) : 20;
@@ -399,6 +409,7 @@ bool KangarooSolver::execute() {
                         } else {
                             sub256((uint64_t*)dp.dist, (uint64_t*)existing.distance, priv_key);
                         }
+                        add256(m_params.range_start, priv_key, priv_key);
 
                         for (int k = 0; k < 4; ++k) m_found_private_key[k] = priv_key[k];
                         m_found = true;
