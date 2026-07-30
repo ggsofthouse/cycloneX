@@ -11,11 +11,11 @@ REPO_DIR = os.path.dirname(os.path.abspath(__file__))
 CUDA_DIR = os.path.join(REPO_DIR, "CUDACyclone-main")
 BINARY   = os.path.join(CUDA_DIR, "CUDACyclone")
 
-PUZZLE_NUM    = "140"
-TARGET_PUBKEY = "031f6a332d3c5c4f2de2378c012f429cd109ba07d69690c6c701b6bb87860d6640"
-TARGET_ADDR   = "1QKBaU6WAeycb3DbKbLBkX7vJiaS8r42Xo"
-RANGE_STR     = "800000000000000000000000000000000000:ffffffffffffffffffffffffffffffffffff"
-DP_BITS       = 24
+PUZZLE_NUM    = "50"
+TARGET_PUBKEY = "03f46f41027bbf44fafd6b059091b900dad41e6845b2241dc3254c7cdd3c5a16c6"
+TARGET_ADDR   = "13zb1hQbWVsc2S7ZTGar4gWDAfNtEJNV2a"
+RANGE_STR     = "2000000000000:3ffffffffffff"
+DP_BITS       = 14
 GRID          = "512,1024"
 SLICES        = 256
 
