@@ -28,12 +28,19 @@ def main():
     print("==========================================================")
     
     # 1. Detect GPUs
-    cc_result = subprocess.run(
-        ['nvidia-smi', '--query-gpu=index,name,compute_cap', '--format=csv,noheader'],
-        capture_output=True, text=True
-    )
+    try:
+        cc_result = subprocess.run(
+            ['nvidia-smi', '--query-gpu=index,name,compute_cap', '--format=csv,noheader'],
+            capture_output=True, text=True
+        )
+    except FileNotFoundError:
+        print("\n❌ GPU NÃO ATIVADA NO KAGGLE!")
+        print("   👉 No painel à direita, sob 'Notebook options':")
+        print("   👉 Mude 'Accelerator' de 'None' para 'GPU T4 x2' (ou GPU P100) e execute a célula novamente!\n")
+        sys.exit(1)
+
     if cc_result.returncode != 0:
-        print("❌ GPU não detectada! Ative 'Accelerator -> GPU T4 x2' no painel do Kaggle.")
+        print("\n❌ GPU não detectada! Ative 'Accelerator -> GPU T4 x2' no painel do Kaggle.\n")
         sys.exit(1)
         
     gpus = [g.strip() for g in cc_result.stdout.strip().split('\n') if g.strip()]
