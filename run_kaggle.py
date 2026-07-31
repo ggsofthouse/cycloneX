@@ -49,7 +49,7 @@ def main():
     parser.add_argument("--random", action="store_true", help="Escolhe slots aleatórios dentro da Janela de Ouro")
     parser.add_argument("--grid", type=str, default="512,1024", help="Configuração CUDA Grid (ex: 512,1024 ou 1024,1024)")
     parser.add_argument("--slices", type=int, default=256, help="Número de Slices (ex: 256 ou 512)")
-    parser.add_argument("--dp-bits", type=int, default=26, help="Bits DP para Kangaroo (ex: 26)")
+    parser.add_argument("--dp-bits", type=int, default=22, help="Bits DP para Kangaroo (ex: 22)")
     args, unknown = parser.parse_known_args()
 
     if args.instance == 0:
