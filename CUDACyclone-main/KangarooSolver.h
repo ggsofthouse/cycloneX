@@ -1,5 +1,6 @@
 #pragma once
 #include "ISolver.hpp"
+#include <array>
 #include <atomic>
 #include <mutex>
 #include <thread>
