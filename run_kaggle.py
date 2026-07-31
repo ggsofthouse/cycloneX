@@ -69,9 +69,10 @@ def main():
             os.environ['PATH'] = f"{cuda_path}:{os.environ.get('PATH', '')}"
             break
             
-    # 3. Compile if binary doesn't exist
-    if not os.path.exists(BINARY):
-        print("\n🔨 Compilando CUDACyclone para GPU T4 (aguarde ~2 min)...")
+    # 3. Compile fresh CUDACyclone binary
+    needs_build = True
+    if needs_build:
+        print("\n🔨 Compilando CUDACyclone v2.1 Otimizado (16k Walkers, 4k Steps)...")
         cc_raw = subprocess.run(
             ['nvidia-smi', '--query-gpu=compute_cap', '--format=csv,noheader'],
             capture_output=True, text=True
@@ -84,8 +85,6 @@ def main():
             print("❌ Compilação falhou:\n", build.stderr[-1500:])
             sys.exit(1)
         print(f"✅ Compilado com sucesso! ({os.path.getsize(BINARY)/(1024*1024):.1f} MB)")
-    else:
-        print(f"✅ Executável já pronto: {BINARY}")
         
     # 4. Save Key Helper
     def save_found_key(priv_hex):
