@@ -213,7 +213,15 @@ Chave (HEX): {priv_hex}
                 hrs, mins  = divmod(mins, 60)
                 time_fmt   = f"{hrs:02d}:{mins:02d}:{secs:02d}"
 
-                print("\n" + "="*70)
+                # Limpar a tela para manter APENAS 1 BLOCO ÚNICO ATUALIZADO no notebook/terminal
+                try:
+                    from IPython.display import clear_output
+                    clear_output(wait=True)
+                except Exception:
+                    sys.stdout.write("\033[H\033[J")
+                    sys.stdout.flush()
+
+                print("="*70)
                 print(f"🦘 CycloneX Telemetry (Instância #{args.instance}) | Puzzle #{PUZZLE_NUM}")
                 print("-" * 70)
                 print(f"⚡ Velocidade Combinada    : {tot_speed/1000.0:.3f} Gkeys/s ({tot_speed:.2f} Mkeys/s)")
