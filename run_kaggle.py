@@ -167,8 +167,20 @@ Chave (HEX): {priv_hex}
     stats_regex = re.compile(r'Time:\s*([\d\.]+)\s*s\s*\|\s*Speed:\s*([\d\.]+)\s*(Mkeys/s|Gkeys/s|Kkeys/s)\s*\|\s*Count:\s*(\d+)\s*\|\s*Chunks:\s*(\d+)', re.IGNORECASE)
 
     try:
+        import select
+        has_select = hasattr(select, 'select') and os.name != 'nt'
+    except ImportError:
+        has_select = False
+
+    try:
         while any(p.poll() is None for _, p in processes):
-            for gpu_id, p in processes:
+            if has_select:
+                rlist, _, _ = select.select([p.stdout for _, p in processes], [], [], 0.1)
+                active_procs = [(gid, p) for gid, p in processes if p.stdout in rlist]
+            else:
+                active_procs = processes
+
+            for gpu_id, p in active_procs:
                 line = p.stdout.readline()
                 if not line:
                     continue
@@ -177,6 +189,8 @@ Chave (HEX): {priv_hex}
                 if 'KEY FOUND' in line_str or 'Private key' in line_str:
                     match = re.search(r'(?:Private key|KEY FOUND)[:\s]+([0-9A-Fa-fx]+)', line_str, re.IGNORECASE)
                     if match:
+                        sys.stdout.write("\n")
+                        sys.stdout.flush()
                         save_found_key(match.group(1))
                         for _, pr in processes:
                             pr.terminate()
@@ -202,7 +216,7 @@ Chave (HEX): {priv_hex}
                     }
 
             now = time.time()
-            if now - last_print_time >= 5.0:
+            if now - last_print_time >= 2.0:
                 last_print_time = now
                 tot_speed = sum(s["speed"] for s in gpu_stats.values())
                 tot_count = sum(s["count"] for s in gpu_stats.values())
@@ -213,31 +227,21 @@ Chave (HEX): {priv_hex}
                 hrs, mins  = divmod(mins, 60)
                 time_fmt   = f"{hrs:02d}:{mins:02d}:{secs:02d}"
 
-                # Limpar a tela para manter APENAS 1 BLOCO ÚNICO ATUALIZADO no notebook/terminal
-                try:
-                    from IPython.display import clear_output
-                    clear_output(wait=True)
-                except Exception:
-                    sys.stdout.write("\033[H\033[J")
-                    sys.stdout.flush()
+                gpu_parts = [f"GPU#{gid}: {s['speed']:.1f} Mkeys/s" for gid, s in sorted(gpu_stats.items())]
+                gpu_summary = " | ".join(gpu_parts)
 
-                print("="*70)
-                print(f"🦘 CycloneX Telemetry (Instância #{args.instance}) | Puzzle #{PUZZLE_NUM}")
-                print("-" * 70)
-                print(f"⚡ Velocidade Combinada    : {tot_speed/1000.0:.3f} Gkeys/s ({tot_speed:.2f} Mkeys/s)")
-                print(f"🔑 Total Chaves Varridas  : {tot_count:,}")
-                print(f"🎯 Armadilhas (Chunks)    : {tot_chunks:,} Tame Traps")
-                print(f"⏱️ Tempo de Execução      : {time_fmt} ({max_time:.0f}s)")
-                print("-" * 70)
-                for gid in sorted(gpu_stats.keys()):
-                    st = gpu_stats[gid]
-                    slot_info = gpu_slots.get(gid, {})
-                    pct_s = slot_info.get("pct_s", 0.0)
-                    pct_e = slot_info.get("pct_e", 0.0)
-                    print(f"   • GPU #{gid} | {st['speed']:.2f} Mkeys/s | {st['count']:,} keys | Faixa: {pct_s:.2f}% ➔ {pct_e:.2f}%")
-                print("="*70)
+                status_line = (
+                    f"🦘 [#140 Inst #{args.instance}] ⏱️ {time_fmt} | "
+                    f"⚡ {tot_speed/1000.0:.3f} Gkeys/s ({tot_speed:.1f} Mkeys/s) | "
+                    f"🔑 {tot_count:,} keys | 🎯 Traps: {tot_chunks:,} | {gpu_summary}"
+                )
 
-            time.sleep(0.1)
+                # Sobrescreve a linha atual com \r para não gerar log infinito no Kaggle/Jupyter
+                sys.stdout.write(f"\r{status_line:<140}")
+                sys.stdout.flush()
+
+            if not has_select:
+                time.sleep(0.1)
     except KeyboardInterrupt:
         print("\n⛔ Interrompido pelo usuário.")
     finally:
