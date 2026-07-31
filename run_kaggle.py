@@ -37,6 +37,7 @@ import socket
 import hashlib
 
 def main():
+    global BINARY
     parser = argparse.ArgumentParser(description="CycloneX Kaggle Multi-GPU Engine")
     parser.add_argument("--instance", type=int, default=0, help="ID da instância (0 = autodetectar por hostname do container)")
     parser.add_argument("--slot", type=int, default=-1, help="Slot inicial fixo (0 a 119)")
