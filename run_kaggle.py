@@ -8,6 +8,11 @@ import re
 import json
 import random
 
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
+
 REPO_DIR = os.path.dirname(os.path.abspath(__file__))
 CUDA_DIR = os.path.join(REPO_DIR, "CUDACyclone-main")
 BINARY_NAME = "CUDACyclone.exe" if os.name == 'nt' else "CUDACyclone"
