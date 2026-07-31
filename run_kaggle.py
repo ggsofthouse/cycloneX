@@ -19,7 +19,7 @@ PUZZLE_NUM    = "140"
 TARGET_PUBKEY = "031f6a332d3c5c4f2de2378c012f429cd109ba07d69690c6c701b6bb87860d6640"
 TARGET_ADDR   = "1QKBaU6WAeycb3DbKbLBkX7vJiaS8r42Xo"
 DP_BITS       = 26
-GRID          = "1024,1024"
+GRID          = "512,1024"
 SLICES        = 256
 
 # Janela de Ouro do Miolo baseada na assinatura dos puzzles #120, #125, #130 (62.2%) e #135 (71.2%)
@@ -42,7 +42,7 @@ def main():
     parser.add_argument("--instance", type=int, default=0, help="ID da instância (0 = autodetectar por hostname do container)")
     parser.add_argument("--slot", type=int, default=-1, help="Slot inicial fixo (0 a 119)")
     parser.add_argument("--random", action="store_true", help="Escolhe slots aleatórios dentro da Janela de Ouro")
-    parser.add_argument("--grid", type=str, default="1024,1024", help="Configuração CUDA Grid (ex: 1024,1024 ou 1024,2048)")
+    parser.add_argument("--grid", type=str, default="512,1024", help="Configuração CUDA Grid (ex: 512,1024 ou 1024,1024)")
     parser.add_argument("--slices", type=int, default=256, help="Número de Slices (ex: 256 ou 512)")
     parser.add_argument("--dp-bits", type=int, default=26, help="Bits DP para Kangaroo (ex: 26)")
     args, unknown = parser.parse_known_args()
