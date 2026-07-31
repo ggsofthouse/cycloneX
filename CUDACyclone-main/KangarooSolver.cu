@@ -451,7 +451,7 @@ bool KangarooSolver::execute() {
     cudaFree(d_jump_Y);
 
     // 2. Inicializar Walkers na GPU
-    uint32_t num_walkers = m_params.batch_size > 0 ? m_params.batch_size : 16384;
+    uint32_t num_walkers = m_params.batch_size > 0 ? m_params.batch_size : 4096;
 
     // Tame public key target
     uint64_t tame_pubkey_X[4]{0}, tame_pubkey_Y[4]{0};
@@ -499,7 +499,7 @@ bool KangarooSolver::execute() {
 
     std::vector<DeviceDP> h_dps(max_dps);
     auto t_start = std::chrono::high_resolution_clock::now();
-    uint32_t steps_per_launch = 4096; // 4096 passos por launch para 10x mais vazao e zero latencia PCI-e
+    uint32_t steps_per_launch = 512; // 512 passos por kernel launch previne TDR Watchdog e register spill
 
     // Fase 1: Criar Armadilhas Tame (Tame Walkers)
     init_walkers_kernel<<<blocks, threadsPerBlock>>>(
@@ -508,7 +508,7 @@ bool KangarooSolver::execute() {
     cudaDeviceSynchronize();
 
     std::cout << "[Kangaroo] Fase 1: Gerando armadilhas Tame no alvo..." << std::endl;
-    uint32_t tame_launches = 4; // 4 * 4096 passos por Tame walker para armadilhas densas e perfeitas
+    uint32_t tame_launches = 1; // 1 * 512 passos por Tame walker para manter a armadilha na janela ideal
     for (uint32_t step = 0; step < tame_launches; ++step) {
         uint32_t zero = 0;
         cudaMemcpy(d_dp_count, &zero, sizeof(uint32_t), cudaMemcpyHostToDevice);
