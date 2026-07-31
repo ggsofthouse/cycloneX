@@ -508,12 +508,13 @@ bool KangarooSolver::execute() {
     cudaDeviceSynchronize();
 
     std::cout << "[Kangaroo] Fase 1: Gerando armadilhas Tame no alvo..." << std::endl;
-    uint32_t tame_launches = 64; // Otimizado: 64 launches geram ~1,000+ armadilhas Tame no alvo sem gargalo na CPU
+    uint32_t tame_launches = 16;
+    uint32_t tame_steps = 2048; // 16 * 2048 passos por walker = ~500 armadilhas Tame em 0.1s
     for (uint32_t step = 0; step < tame_launches; ++step) {
         uint32_t zero = 0;
         cudaMemcpy(d_dp_count, &zero, sizeof(uint32_t), cudaMemcpyHostToDevice);
         kernel_kangaroo_walk<<<blocks, threadsPerBlock>>>(
-            d_walkers, num_walkers, steps_per_launch, dp_mask, d_dps, d_dp_count, max_dps
+            d_walkers, num_walkers, tame_steps, dp_mask, d_dps, d_dp_count, max_dps
         );
         cudaDeviceSynchronize();
         uint32_t dp_count = 0;
