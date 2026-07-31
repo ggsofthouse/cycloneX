@@ -10,7 +10,10 @@ import random
 
 REPO_DIR = os.path.dirname(os.path.abspath(__file__))
 CUDA_DIR = os.path.join(REPO_DIR, "CUDACyclone-main")
-BINARY   = os.path.join(CUDA_DIR, "CUDACyclone")
+BINARY_NAME = "CUDACyclone.exe" if os.name == 'nt' else "CUDACyclone"
+BINARY   = os.path.join(CUDA_DIR, BINARY_NAME)
+if not os.path.exists(BINARY) and os.path.exists(os.path.join(REPO_DIR, BINARY_NAME)):
+    BINARY = os.path.join(REPO_DIR, BINARY_NAME)
 
 PUZZLE_NUM    = "140"
 TARGET_PUBKEY = "031f6a332d3c5c4f2de2378c012f429cd109ba07d69690c6c701b6bb87860d6640"
@@ -82,22 +85,33 @@ def main():
             os.environ['PATH'] = f"{cuda_path}:{os.environ.get('PATH', '')}"
             break
             
-    # 3. Compile fresh CUDACyclone binary
-    needs_build = True
+    # 3. Compile CUDACyclone binary if not present
+    needs_build = not os.path.exists(BINARY)
     if needs_build:
-        print("\n🔨 Compilando CUDACyclone v2.1 Otimizado (16k Walkers, 4k Steps)...")
-        cc_raw = subprocess.run(
-            ['nvidia-smi', '--query-gpu=compute_cap', '--format=csv,noheader'],
-            capture_output=True, text=True
-        ).stdout.strip().split('\n')[0].replace('.', '')
-        gpu_arch = cc_raw.strip() if cc_raw.strip() else '75'
+        print("\n🔨 Compilando CUDACyclone v2.1 Otimizado...")
+        if os.name == 'nt':
+            compile_bat = os.path.join(REPO_DIR, "compile.bat")
+            build = subprocess.run([compile_bat], capture_output=True, text=True, cwd=REPO_DIR)
+        else:
+            cc_raw = subprocess.run(
+                ['nvidia-smi', '--query-gpu=compute_cap', '--format=csv,noheader'],
+                capture_output=True, text=True
+            ).stdout.strip().split('\n')[0].replace('.', '')
+            gpu_arch = cc_raw.strip() if cc_raw.strip() else '75'
+            
+            subprocess.run(['make', 'clean'], cwd=CUDA_DIR, capture_output=True)
+            build = subprocess.run(['make', f'GPU_ARCHS={gpu_arch}', '-j4'], capture_output=True, text=True, cwd=CUDA_DIR)
         
-        subprocess.run(['make', 'clean'], cwd=CUDA_DIR, capture_output=True)
-        build = subprocess.run(['make', f'GPU_ARCHS={gpu_arch}', '-j4'], capture_output=True, text=True, cwd=CUDA_DIR)
+        if not os.path.exists(BINARY) and os.path.exists(os.path.join(REPO_DIR, BINARY_NAME)):
+            BINARY = os.path.join(REPO_DIR, BINARY_NAME)
+
         if build.returncode != 0 or not os.path.exists(BINARY):
-            print("❌ Compilação falhou:\n", build.stderr[-1500:])
+            err_msg = build.stderr[-1500:] if build.stderr else build.stdout[-1500:]
+            print("❌ Compilação falhou:\n", err_msg)
             sys.exit(1)
         print(f"✅ Compilado com sucesso! ({os.path.getsize(BINARY)/(1024*1024):.1f} MB)")
+    else:
+        print(f"✅ Binário pronto detectado: {BINARY} ({os.path.getsize(BINARY)/(1024*1024):.1f} MB)")
         
     # 4. Save Key Helper
     def save_found_key(priv_hex):
