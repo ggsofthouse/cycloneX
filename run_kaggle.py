@@ -133,6 +133,7 @@ Chave (HEX): {priv_hex}
 
     print("\n🚀 Iniciando Kangaroo Solver nas GPUs (Particionamento sem lacunas)...")
     processes = []
+    gpu_slots = {}
     for gpu_id in range(num_gpus):
         global_slot = ((args.instance * num_gpus + gpu_id) % TOTAL_SLOTS)
         gpu_start = golden_start + global_slot * slot_width
@@ -141,6 +142,7 @@ Chave (HEX): {priv_hex}
 
         pct_s = ((gpu_start - start_base) / range_len) * 100.0
         pct_e = ((gpu_end - start_base) / range_len) * 100.0
+        gpu_slots[gpu_id] = {"pct_s": pct_s, "pct_e": pct_e, "slot": global_slot}
         print(f"   - GPU #{gpu_id} (Slot #{global_slot}) | Faixa: {pct_s:.2f}% a {pct_e:.2f}% | Range: {range_str_gpu[:12]}...:{range_str_gpu[-12:]}")
 
         cmd = [
@@ -200,23 +202,34 @@ Chave (HEX): {priv_hex}
                     }
 
             now = time.time()
-            if now - last_print_time >= 1.0:
+            if now - last_print_time >= 5.0:
                 last_print_time = now
                 tot_speed = sum(s["speed"] for s in gpu_stats.values())
                 tot_count = sum(s["count"] for s in gpu_stats.values())
                 tot_chunks = sum(s["chunks"] for s in gpu_stats.values())
+                max_time   = max((s["time"] for s in gpu_stats.values()), default=0.0)
 
-                lines_out = []
+                mins, secs = divmod(int(max_time), 60)
+                hrs, mins  = divmod(mins, 60)
+                time_fmt   = f"{hrs:02d}:{mins:02d}:{secs:02d}"
+
+                print("\n" + "="*70)
+                print(f"🦘 CycloneX Telemetry (Instância #{args.instance}) | Puzzle #{PUZZLE_NUM}")
+                print("-" * 70)
+                print(f"⚡ Velocidade Combinada    : {tot_speed/1000.0:.3f} Gkeys/s ({tot_speed:.2f} Mkeys/s)")
+                print(f"🔑 Total Chaves Varridas  : {tot_count:,}")
+                print(f"🎯 Armadilhas (Chunks)    : {tot_chunks:,} Tame Traps")
+                print(f"⏱️ Tempo de Execução      : {time_fmt} ({max_time:.0f}s)")
+                print("-" * 70)
                 for gid in sorted(gpu_stats.keys()):
                     st = gpu_stats[gid]
-                    lines_out.append(f"[GPU {gid}] Time: {st['time']:.1f}s | Speed: {st['speed']:.2f} Mkeys/s | Count: {st['count']:,} | Chunks: {st['chunks']:,}")
+                    slot_info = gpu_slots.get(gid, {})
+                    pct_s = slot_info.get("pct_s", 0.0)
+                    pct_e = slot_info.get("pct_e", 0.0)
+                    print(f"   • GPU #{gid} | {st['speed']:.2f} Mkeys/s | {st['count']:,} keys | Faixa: {pct_s:.2f}% ➔ {pct_e:.2f}%")
+                print("="*70)
 
-                lines_out.append(f"🔥 COMBINED NOTEBOOK SPEED: {tot_speed/1000.0:.3f} Gkeys/s | TOTAL KEYS: {tot_count:,} | CHUNKS: {tot_chunks:,}")
-
-                # Print clean status line update
-                print("\r" + " | ".join(lines_out), end="", flush=True)
-
-            time.sleep(0.01)
+            time.sleep(0.1)
     except KeyboardInterrupt:
         print("\n⛔ Interrompido pelo usuário.")
     finally:
