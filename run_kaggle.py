@@ -6,6 +6,7 @@ import time
 import datetime
 import re
 import json
+import random
 
 REPO_DIR = os.path.dirname(os.path.abspath(__file__))
 CUDA_DIR = os.path.join(REPO_DIR, "CUDACyclone-main")
