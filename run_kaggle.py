@@ -14,10 +14,14 @@ BINARY   = os.path.join(CUDA_DIR, "CUDACyclone")
 PUZZLE_NUM    = "140"
 TARGET_PUBKEY = "031f6a332d3c5c4f2de2378c012f429cd109ba07d69690c6c701b6bb87860d6640"
 TARGET_ADDR   = "1QKBaU6WAeycb3DbKbLBkX7vJiaS8r42Xo"
-RANGE_STR     = "800000000000000000000000000000000000:ffffffffffffffffffffffffffffffffffff"
 DP_BITS       = 26
 GRID          = "512,1024"
 SLICES        = 256
+
+# Janela de Ouro do Miolo baseada na assinatura dos puzzles #120, #125, #130 (62.2%) e #135 (71.2%)
+GOLDEN_PCT_MIN = 0.57  # Limite inferior em 57%
+GOLDEN_PCT_MAX = 0.75  # Limite superior em 75%
+TOTAL_SLOTS    = 120   # Capacidade para particionar até 120 GPUs sem sobreposição ou lacunas
 
 WORK_DIR      = "/kaggle/working" if os.path.exists("/kaggle/working") else os.getcwd()
 FOUND_FILE    = os.path.join(WORK_DIR, "FOUND_KEY.txt")
@@ -117,13 +121,32 @@ Chave (HEX): {priv_hex}
             y_val = p_secp - y_val
         decompressed_pub = f"{x_val:064x}{y_val:064x}"
 
-    print("\n🚀 Iniciando Kangaroo Solver nas GPUs...")
+    start_base = 1 << 139
+    range_len = 1 << 139
+    golden_start = start_base + int(range_len * GOLDEN_PCT_MIN)
+    golden_end = start_base + int(range_len * GOLDEN_PCT_MAX)
+    golden_width = golden_end - golden_start
+    slot_width = golden_width // TOTAL_SLOTS
+
+    print(f"\n🎯 [Janela de Ouro Concentrada ({GOLDEN_PCT_MIN*100:.0f}% a {GOLDEN_PCT_MAX*100:.0f}%)]")
+    print(f"   - Limite Global: {golden_start:036x} : {golden_end:036x}")
+
+    print("\n🚀 Iniciando Kangaroo Solver nas GPUs (Particionamento sem lacunas)...")
     processes = []
     for gpu_id in range(num_gpus):
+        global_slot = ((args.instance * num_gpus + gpu_id) % TOTAL_SLOTS)
+        gpu_start = golden_start + global_slot * slot_width
+        gpu_end = (gpu_start + slot_width - 1) if global_slot < TOTAL_SLOTS - 1 else golden_end
+        range_str_gpu = f"{gpu_start:036x}:{gpu_end:036x}"
+
+        pct_s = ((gpu_start - start_base) / range_len) * 100.0
+        pct_e = ((gpu_end - start_base) / range_len) * 100.0
+        print(f"   - GPU #{gpu_id} (Slot #{global_slot}) | Faixa: {pct_s:.2f}% a {pct_e:.2f}% | Range: {range_str_gpu[:12]}...:{range_str_gpu[-12:]}")
+
         cmd = [
             BINARY,
             '--solver', 'kangaroo',
-            '--range', RANGE_STR,
+            '--range', range_str_gpu,
             '--target-pubkey', decompressed_pub,
             '--address', TARGET_ADDR,
             '--dp-bits', str(DP_BITS),
@@ -134,7 +157,6 @@ Chave (HEX): {priv_hex}
         env = {**os.environ, 'CUDA_VISIBLE_DEVICES': str(gpu_id)}
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, env=env)
         processes.append((gpu_id, proc))
-        print(f"   - GPU #{gpu_id} disparada...")
 
     print("\n[Kangaroo Engine] Processando nas GPUs... (Acompanhe abaixo)\n")
     gpu_stats = {gid: {"time": 0.0, "speed": 0.0, "count": 0, "chunks": 0} for gid in range(num_gpus)}
