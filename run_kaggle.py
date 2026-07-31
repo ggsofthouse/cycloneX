@@ -35,11 +35,16 @@ import hashlib
 def main():
     parser = argparse.ArgumentParser(description="CycloneX Kaggle Multi-GPU Engine")
     parser.add_argument("--instance", type=int, default=0, help="ID da instância (0 = autodetectar por hostname do container)")
+    parser.add_argument("--slot", type=int, default=-1, help="Slot inicial fixo (0 a 119)")
+    parser.add_argument("--random", action="store_true", help="Escolhe slots aleatórios dentro da Janela de Ouro")
     args, unknown = parser.parse_known_args()
 
     if args.instance == 0:
-        host_name = socket.gethostname()
-        args.instance = (int(hashlib.sha256(host_name.encode('utf-8')).hexdigest()[:6], 16) % 10000) + 1
+        if args.random:
+            args.instance = random.randint(1, 999999)
+        else:
+            host_name = socket.gethostname()
+            args.instance = (int(hashlib.sha256(host_name.encode('utf-8')).hexdigest()[:6], 16) % 10000) + 1
 
     print("==========================================================")
     print(f" 🦘 CycloneX Kangaroo Solver — Kaggle Engine v2.0 (Instância Auto #{args.instance})")
@@ -131,11 +136,19 @@ Chave (HEX): {priv_hex}
     print(f"\n🎯 [Janela de Ouro Concentrada ({GOLDEN_PCT_MIN*100:.0f}% a {GOLDEN_PCT_MAX*100:.0f}%)]")
     print(f"   - Limite Global: {golden_start:036x} : {golden_end:036x}")
 
+    PROGRESS_FILE = os.path.join(WORK_DIR, "tested_ranges.json")
+
     print("\n🚀 Iniciando Kangaroo Solver nas GPUs (Particionamento sem lacunas)...")
     processes = []
     gpu_slots = {}
     for gpu_id in range(num_gpus):
-        global_slot = ((args.instance * num_gpus + gpu_id) % TOTAL_SLOTS)
+        if args.slot >= 0:
+            global_slot = (args.slot + gpu_id) % TOTAL_SLOTS
+        elif args.random:
+            global_slot = (random.randint(0, TOTAL_SLOTS - 1) + gpu_id) % TOTAL_SLOTS
+        else:
+            global_slot = ((args.instance * num_gpus + gpu_id) % TOTAL_SLOTS)
+
         gpu_start = golden_start + global_slot * slot_width
         gpu_end = (gpu_start + slot_width - 1) if global_slot < TOTAL_SLOTS - 1 else golden_end
         range_str_gpu = f"{gpu_start:036x}:{gpu_end:036x}"
@@ -144,6 +157,26 @@ Chave (HEX): {priv_hex}
         pct_e = ((gpu_end - start_base) / range_len) * 100.0
         gpu_slots[gpu_id] = {"pct_s": pct_s, "pct_e": pct_e, "slot": global_slot}
         print(f"   - GPU #{gpu_id} (Slot #{global_slot}) | Faixa: {pct_s:.2f}% a {pct_e:.2f}% | Range: {range_str_gpu[:12]}...:{range_str_gpu[-12:]}")
+
+        # Grava o histórico leve de faixas iniciadas/testadas
+        try:
+            history = []
+            if os.path.exists(PROGRESS_FILE):
+                with open(PROGRESS_FILE, 'r') as pf:
+                    history = json.load(pf)
+            history.append({
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "puzzle": PUZZLE_NUM,
+                "instance": args.instance,
+                "gpu_id": gpu_id,
+                "slot": global_slot,
+                "range": range_str_gpu,
+                "pct_range": f"{pct_s:.2f}% - {pct_e:.2f}%"
+            })
+            with open(PROGRESS_FILE, 'w') as pf:
+                json.dump(history, pf, indent=2)
+        except Exception:
+            pass
 
         cmd = [
             BINARY,
