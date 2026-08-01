@@ -35,8 +35,8 @@ After=network.target
 
 [Service]
 User=root
-WorkingDirectory=/opt/cyclone-master
-ExecStart=/opt/cyclone-master/venv/bin/python /opt/cyclone-master/server.py
+WorkingDirectory=/opt/cyclone-master/master_server
+ExecStart=/opt/cyclone-master/venv/bin/python /opt/cyclone-master/master_server/server.py
 Restart=always
 RestartSec=5
 
