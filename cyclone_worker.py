@@ -39,7 +39,6 @@ def resolve_rc_kangaroo():
         rc_exe = os.path.join(RC_DIR, "RCKangaroo.exe")
         if os.path.exists(rc_exe):
             return rc_exe, "rckangaroo"
-        # Tenta baixar o release pré-compilado para Windows (se disponível)
         rc_root = os.path.join(REPO_DIR, "RCKangaroo.exe")
         if os.path.exists(rc_root):
             return rc_root, "rckangaroo"
@@ -59,6 +58,16 @@ def resolve_rc_kangaroo():
             subprocess.run(["apt-get", "install", "-y", "-qq", pkg],
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
+    # --- Localiza o nvcc em paths não-padrão (Lightning.ai, RunPod, etc.) ---
+    nvcc_path = _find_nvcc()
+    if nvcc_path is None:
+        print("❌ nvcc não encontrado. Pulando RCKangaroo, usando CUDACyclone.", flush=True)
+        return None, None
+
+    # Seta CUDACXX para o cmake encontrar o compilador
+    build_env = {**os.environ, "CUDACXX": nvcc_path, "CUDA_COMPILER": nvcc_path}
+    print(f"⚙️  nvcc encontrado: {nvcc_path}", flush=True)
+
     # Clona e compila RCKangaroo
     if not os.path.exists(RC_DIR):
         ret = subprocess.run(
@@ -73,11 +82,19 @@ def resolve_rc_kangaroo():
     print(f"⚙️  Compilando RCKangaroo para SM{sm}...", flush=True)
 
     cmake_ret = subprocess.run(
-        ["cmake", "-B", "build", f"-DCMAKE_CUDA_ARCHITECTURES={sm}"],
-        cwd=RC_DIR
+        [
+            "cmake", "-B", "build",
+            f"-DCMAKE_CUDA_ARCHITECTURES={sm}",
+            f"-DCMAKE_CUDA_COMPILER={nvcc_path}",
+        ],
+        cwd=RC_DIR,
+        env=build_env
     )
     if cmake_ret.returncode == 0:
-        make_ret = subprocess.run(["cmake", "--build", "build", "--config", "Release"], cwd=RC_DIR)
+        subprocess.run(
+            ["cmake", "--build", "build", "--config", "Release", "--parallel"],
+            cwd=RC_DIR, env=build_env
+        )
         candidates = [
             os.path.join(RC_DIR, "build", "RCKangaroo"),
             os.path.join(RC_DIR, "RCKangaroo"),
@@ -90,6 +107,34 @@ def resolve_rc_kangaroo():
 
     print("⚠️  Compilação do RCKangaroo falhou. Usando CUDACyclone como fallback.", flush=True)
     return None, None
+
+
+def _find_nvcc():
+    """
+    Localiza o nvcc em todos os paths comuns de CUDA no Linux.
+    Funciona em: Lightning.ai, RunPod, Vast.ai, Google Colab, Kaggle, Ubuntu.
+    """
+    # 1. Já está no PATH?
+    nvcc = shutil.which("nvcc")
+    if nvcc:
+        return nvcc
+
+    # 2. Busca em todos os diretórios /usr/local/cuda*/bin
+    import glob
+    candidates = sorted(
+        glob.glob("/usr/local/cuda*/bin/nvcc") +
+        glob.glob("/usr/cuda*/bin/nvcc") +
+        glob.glob("/opt/cuda*/bin/nvcc"),
+        reverse=True  # versão mais recente primeiro
+    )
+    for c in candidates:
+        if os.path.isfile(c) and os.access(c, os.X_OK):
+            # Adiciona ao PATH para subprocessos futuros
+            cuda_bin = os.path.dirname(c)
+            os.environ["PATH"] = cuda_bin + os.pathsep + os.environ.get("PATH", "")
+            return c
+
+    return None
 
 
 def detect_gpu_sm():
