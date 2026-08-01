@@ -96,7 +96,11 @@ def resolve_rc_kangaroo():
             cwd=RC_DIR, env=build_env
         )
         candidates = [
+            os.path.join(RC_DIR, "build", "bin", "rckangaroo"),   # cmake padrao
+            os.path.join(RC_DIR, "build", "bin", "RCKangaroo"),   # variante maiuscula
+            os.path.join(RC_DIR, "build", "rckangaroo"),
             os.path.join(RC_DIR, "build", "RCKangaroo"),
+            os.path.join(RC_DIR, "rckangaroo"),
             os.path.join(RC_DIR, "RCKangaroo"),
         ]
         for c in candidates:
