@@ -21,9 +21,38 @@ except Exception:
     pass
 
 REPO_DIR = os.path.dirname(os.path.abspath(__file__))
-CUDA_EXE = os.path.join(REPO_DIR, "CUDACyclone.exe")
-if not os.path.exists(CUDA_EXE):
-    CUDA_EXE = os.path.join(REPO_DIR, "CUDACyclone-main", "CUDACyclone")
+CUDA_DIR = os.path.join(REPO_DIR, "CUDACyclone-main")
+
+def resolve_cuda_exe():
+    if sys.platform == "win32":
+        exe = os.path.join(REPO_DIR, "CUDACyclone.exe")
+        if os.path.exists(exe): return exe
+        exe_sub = os.path.join(CUDA_DIR, "CUDACyclone.exe")
+        if os.path.exists(exe_sub): return exe_sub
+        return "CUDACyclone.exe"
+    else:
+        # Linux / Colab / Kaggle
+        bin_paths = [
+            os.path.join(REPO_DIR, "CUDACyclone"),
+            os.path.join(CUDA_DIR, "CUDACyclone"),
+            os.path.join(REPO_DIR, "CUDACyclone.exe")
+        ]
+        for p in bin_paths:
+            if os.path.exists(p):
+                os.chmod(p, 0o755)
+                return p
+        
+        # Se o binário não existir no Linux, compila automaticamente com 'make'
+        print("🛠️ Binário Linux não encontrado. Compilando CUDACyclone via NVCC...", flush=True)
+        if os.path.exists(CUDA_DIR):
+            res = subprocess.run(["make"], cwd=CUDA_DIR)
+            compiled = os.path.join(CUDA_DIR, "CUDACyclone")
+            if os.path.exists(compiled):
+                os.chmod(compiled, 0o755)
+                return compiled
+        return "./CUDACyclone"
+
+CUDA_EXE = resolve_cuda_exe()
 
 def http_post(url, data):
     req = urllib.request.Request(
