@@ -99,9 +99,12 @@ def init_db():
 
     pwd_hash = hashlib.sha256((admin_pass + SECRET_KEY).encode()).hexdigest()
     c.execute("SELECT id FROM users WHERE role = 'admin'")
-    if not c.fetchone():
+    row = c.fetchone()
+    if not row:
         c.execute("INSERT INTO users (username, password_hash, role, quota_percent, created_at) VALUES (?, ?, 'admin', 100.0, ?)",
                   (admin_user, pwd_hash, datetime.utcnow().isoformat()))
+    else:
+        c.execute("UPDATE users SET username = ?, password_hash = ? WHERE id = ?", (admin_user, pwd_hash, row[0]))
 
     # Popular os 120 slots da Janela de Ouro do Puzzle #140 (57% a 75%) se a tabela estiver vazia
     c.execute("SELECT COUNT(*) FROM jobs WHERE puzzle = 140")
