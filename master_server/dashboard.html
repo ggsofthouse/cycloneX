@@ -424,9 +424,15 @@
                 const res = await fetch("/api/dashboard/stats");
                 const data = await res.json();
                 
+                const completed = data.completed_slots || 0;
+                const total = data.total_slots || 120;
+                const pct = ((completed / total) * 100).toFixed(1);
+                
                 document.getElementById("totalSpeed").innerText = data.total_speed_gkeys.toFixed(3) + " Gkeys/s";
                 document.getElementById("activeWorkers").innerText = data.active_workers_count;
-                
+                document.getElementById("completedPct").innerText = pct + "%";
+                document.getElementById("slotsRatio").innerText = `${completed} / ${total} Slots`;
+                document.getElementById("progressBar").style.width = pct + "%";
                 document.getElementById("completedSlotsBadge").innerText = `${completed} / ${total} Concluídos`;
 
                 // Renderizar Tabela de Faixas / Slots
