@@ -240,26 +240,36 @@
                 <h5 class="fw-bold mb-0"><i class="fa-solid fa-terminal text-info me-2"></i>Conectar Sua GPU / Máquina à Pool</h5>
                 <ul class="nav nav-pills" id="connectTabs" role="tablist">
                     <li class="nav-item">
-                        <button class="nav-link active bg-dark text-info border border-secondary px-3 py-1 fs-7 mono" id="cmd-tab" data-bs-toggle="tab" data-bs-target="#cmd-pane">CMD / Terminal Local</button>
+                        <button class="nav-link active bg-dark text-info border border-secondary px-3 py-1 fs-7 mono" id="lightning-tab" data-bs-toggle="tab" data-bs-target="#lightning-pane">Lightning.ai / Linux / RunPod</button>
                     </li>
                     <li class="nav-item ms-2">
                         <button class="nav-link bg-dark text-info border border-secondary px-3 py-1 fs-7 mono" id="notebook-tab" data-bs-toggle="tab" data-bs-target="#notebook-pane">Google Colab / Kaggle</button>
                     </li>
+                    <li class="nav-item ms-2">
+                        <button class="nav-link bg-dark text-info border border-secondary px-3 py-1 fs-7 mono" id="cmd-tab" data-bs-toggle="tab" data-bs-target="#cmd-pane">Windows CMD</button>
+                    </li>
                 </ul>
             </div>
             <div class="tab-content">
-                <div class="tab-pane fade show active" id="cmd-pane">
-                    <p class="text-secondary small mb-2">Cole o comando abaixo no terminal do seu computador (Windows CMD ou Linux) para conectar sua GPU local à Pool:</p>
+                <div class="tab-pane fade show active" id="lightning-pane">
+                    <p class="text-secondary small mb-2"><i class="fa-solid fa-bolt text-warning me-1"></i>Cole no Terminal de Instâncias Linux com GPU (<strong>Lightning.ai, RunPod, Vast.ai, Linux ZSH/Bash</strong>):</p>
                     <div class="position-relative">
-                        <pre class="bg-black p-3 rounded border border-secondary text-success mono mb-0" id="cmdCode">git clone https://github.com/ggsofthouse/cycloneX.git cycloneX & cd cycloneX & python cyclone_worker.py --server http://valyrafi.com.br --name MinhaGPU</pre>
-                        <button class="btn btn-sm btn-outline-info position-absolute top-0 end-0 m-2" onclick="copyToClipboard('cmdCode')"><i class="fa-solid fa-copy me-1"></i>Copiar</button>
+                        <pre class="bg-black p-3 rounded border border-secondary text-warning mono mb-0" id="lightningCode">rm -rf cycloneX; git clone https://github.com/ggsofthouse/cycloneX.git cycloneX && cd cycloneX && python3 cyclone_worker.py --server http://valyrafi.com.br --name Cloud_GPU</pre>
+                        <button class="btn btn-sm btn-outline-info position-absolute top-0 end-0 m-2" onclick="copyToClipboard('lightningCode')"><i class="fa-solid fa-copy me-1"></i>Copiar</button>
                     </div>
                 </div>
                 <div class="tab-pane fade" id="notebook-pane">
-                    <p class="text-secondary small mb-2">Execute esta célula em 1 clique no Google Colab / Kaggle para alocar a GPU do container na Pool:</p>
+                    <p class="text-secondary small mb-2"><i class="fa-solid fa-book-bookmark text-info me-1"></i>Cole direto na <strong>Célula de Código do Google Colab / Kaggle</strong> (com <code>!</code> no início):</p>
                     <div class="position-relative">
-                        <pre class="bg-black p-3 rounded border border-secondary text-info mono mb-0" id="notebookCode">!rm -rf cycloneX && git clone https://github.com/ggsofthouse/cycloneX.git cycloneX && cd cycloneX && python3 cyclone_worker.py --server http://valyrafi.com.br --name Colab_Kaggle_GPU</pre>
+                        <pre class="bg-black p-3 rounded border border-secondary text-info mono mb-0" id="notebookCode">!rm -rf cycloneX; git clone https://github.com/ggsofthouse/cycloneX.git cycloneX && cd cycloneX && python3 cyclone_worker.py --server http://valyrafi.com.br --name Colab_Kaggle_GPU</pre>
                         <button class="btn btn-sm btn-outline-info position-absolute top-0 end-0 m-2" onclick="copyToClipboard('notebookCode')"><i class="fa-solid fa-copy me-1"></i>Copiar</button>
+                    </div>
+                </div>
+                <div class="tab-pane fade" id="cmd-pane">
+                    <p class="text-secondary small mb-2"><i class="fa-solid fa-desktop text-success me-1"></i>Cole no <strong>Prompt de Comando (Windows CMD)</strong> do seu PC:</p>
+                    <div class="position-relative">
+                        <pre class="bg-black p-3 rounded border border-secondary text-success mono mb-0" id="cmdCode">if exist cycloneX rmdir /s /q cycloneX & git clone https://github.com/ggsofthouse/cycloneX.git cycloneX && cd cycloneX && python cyclone_worker.py --server http://valyrafi.com.br --name MinhaGPU</pre>
+                        <button class="btn btn-sm btn-outline-info position-absolute top-0 end-0 m-2" onclick="copyToClipboard('cmdCode')"><i class="fa-solid fa-copy me-1"></i>Copiar</button>
                     </div>
                 </div>
             </div>
