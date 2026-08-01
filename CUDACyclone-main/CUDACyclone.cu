@@ -670,8 +670,8 @@ static void run_on_gpu(
         uint64_t off_lo, off_hi;
         if (rl_hi == 0) {
             // Divisor fits in 64 bits
-            uint64_t rem = 0;
 #ifdef _MSC_VER
+            uint64_t rem = 0;
             off_lo = _udiv128(r_hi, r_lo, rl_lo, &rem);
             off_hi = 0;
 #else
