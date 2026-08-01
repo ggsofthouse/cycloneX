@@ -234,6 +234,50 @@
             </div>
         </div>
 
+        <!-- CARDS DE ESTATÍSTICAS MATEMÁTICAS & ARMADILHAS CANGURU -->
+        <div class="row g-4 mb-4">
+            <div class="col-md-3">
+                <div class="glass-card p-3 border-info border-opacity-25">
+                    <div class="d-flex align-items-center justify-content-between mb-2">
+                        <span class="text-secondary fs-7 text-uppercase fw-bold">Cangurus Ativos (Herd)</span>
+                        <i class="fa-solid fa-paw text-info fs-5"></i>
+                    </div>
+                    <div id="totalKangaroosVal" class="fs-4 fw-bold mono text-info">0</div>
+                    <small class="text-secondary fs-8 mono">524.288 Cangurus / GPU</small>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="glass-card p-3 border-warning border-opacity-25">
+                    <div class="d-flex align-items-center justify-content-between mb-2">
+                        <span class="text-secondary fs-7 text-uppercase fw-bold">Máscara de Armadilhas</span>
+                        <i class="fa-solid fa-bullseye text-warning fs-5"></i>
+                    </div>
+                    <div id="dpBitsVal" class="fs-4 fw-bold mono text-warning">24 DP Bits</div>
+                    <small class="text-secondary fs-8 mono">1 DP a cada 16.777.216 passos</small>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="glass-card p-3 border-success border-opacity-25">
+                    <div class="d-flex align-items-center justify-content-between mb-2">
+                        <span class="text-secondary fs-7 text-uppercase fw-bold">Fatia CUDA (Slices)</span>
+                        <i class="fa-solid fa-cubes text-success fs-5"></i>
+                    </div>
+                    <div id="slicesVal" class="fs-4 fw-bold mono text-success">256 Slices</div>
+                    <small class="text-secondary fs-8 mono">Batch 0-invMod (Warp 32)</small>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="glass-card p-3 border-cyan border-opacity-25">
+                    <div class="d-flex align-items-center justify-content-between mb-2">
+                        <span class="text-secondary fs-7 text-uppercase fw-bold">Armadilhas Criadas</span>
+                        <i class="fa-solid fa-database text-cyan fs-5"></i>
+                    </div>
+                    <div id="trapsInMem" class="fs-4 fw-bold mono text-cyan">~0 DPs</div>
+                    <small class="text-secondary fs-8 mono">Tabela Hashing 256-bit RAM</small>
+                </div>
+            </div>
+        </div>
+
         <!-- SEÇÃO DE CONEXÃO DIRETA (COPIAR E COLAR CÓDIGO) -->
         <div class="glass-card p-4 mb-4">
             <div class="d-flex justify-content-between align-items-center mb-3">
@@ -444,6 +488,15 @@
                 document.getElementById("slotsRatio").innerText = `${completed} / ${total} Slots`;
                 document.getElementById("progressBar").style.width = pct + "%";
                 document.getElementById("completedSlotsBadge").innerText = `${completed} / ${total} Concluídos`;
+
+                // Atualizar Cards de Telemetria Canguru
+                const activeWorkersCount = data.active_workers_count || 0;
+                const totalKangaroos = (activeWorkersCount * 524288).toLocaleString('pt-BR');
+                document.getElementById("totalKangaroosVal").innerText = totalKangaroos;
+                
+                const totalSpeedMkeys = data.total_speed_mkeys || 0;
+                const estimatedDpsPerSec = ((totalSpeedMkeys * 1000000) / 16777216).toFixed(1);
+                document.getElementById("trapsInMem").innerText = `~${estimatedDpsPerSec} DPs/s`;
 
                 // Renderizar Tabela de Faixas / Slots
                 const jTable = document.getElementById("jobsTable");
