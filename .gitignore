@@ -9,6 +9,12 @@ CUDACyclone.exe
 # Local Database
 cyclone.db
 cyclone.db-journal
+master_pool.db
+*.db
+
+# Security & Credentials
+admin_credentials.json
+.env
 
 # Python
 __pycache__/

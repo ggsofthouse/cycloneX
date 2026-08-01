@@ -82,12 +82,26 @@ def init_db():
         )
     ''')
 
-    # Garantir a existência do usuário ADMIN inicial (admin / admin12345) se não existir
-    c.execute("SELECT id FROM users WHERE username = 'admin'")
+    # Garantir a existência do usuário ADMIN principal (Lê de variável de ambiente ou arquivo local seguro na VPS)
+    admin_user = os.environ.get("ADMIN_USER", "admin")
+    admin_pass = os.environ.get("ADMIN_PASS", "admin12345")
+    
+    # Se existir arquivo local de configuração de admin na VPS (não enviado ao Git)
+    admin_cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "admin_credentials.json")
+    if os.path.exists(admin_cfg_path):
+        try:
+            with open(admin_cfg_path, 'r') as f:
+                cfg = json.load(f)
+                admin_user = cfg.get("username", admin_user)
+                admin_pass = cfg.get("password", admin_pass)
+        except Exception:
+            pass
+
+    pwd_hash = hashlib.sha256((admin_pass + SECRET_KEY).encode()).hexdigest()
+    c.execute("SELECT id FROM users WHERE role = 'admin'")
     if not c.fetchone():
-        pwd_hash = hashlib.sha256(("admin12345" + SECRET_KEY).encode()).hexdigest()
-        c.execute("INSERT INTO users (username, password_hash, role, quota_percent, created_at) VALUES ('admin', ?, 'admin', 100.0, ?)",
-                  (pwd_hash, datetime.utcnow().isoformat()))
+        c.execute("INSERT INTO users (username, password_hash, role, quota_percent, created_at) VALUES (?, ?, 'admin', 100.0, ?)",
+                  (admin_user, pwd_hash, datetime.utcnow().isoformat()))
 
     # Popular os 120 slots da Janela de Ouro do Puzzle #140 (57% a 75%) se a tabela estiver vazia
     c.execute("SELECT COUNT(*) FROM jobs WHERE puzzle = 140")
@@ -189,6 +203,21 @@ def login(req: LoginRequest):
     
     token = f"{user[0]}:{pwd_hash}"
     return {"token": token, "username": user[0], "role": user[1], "quota_percent": user[2]}
+
+class ChangePasswordRequest(BaseModel):
+    new_password: str
+
+@app.post("/api/auth/change-password")
+def change_password(req: ChangePasswordRequest, user: dict = Depends(verify_token)):
+    username = user["username"]
+    new_hash = hashlib.sha256((req.new_password + SECRET_KEY).encode()).hexdigest()
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("UPDATE users SET password_hash = ? WHERE username = ?", (new_hash, username))
+    conn.commit()
+    conn.close()
+    new_token = f"{username}:{new_hash}"
+    return {"status": "SUCCESS", "message": f"Senha do usuário {username} alterada com sucesso!", "token": new_token}
 
 @app.get("/api/admin/users")
 def list_users(admin: dict = Depends(get_admin_user)):
