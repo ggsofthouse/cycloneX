@@ -42,14 +42,39 @@ def resolve_cuda_exe():
                 os.chmod(p, 0o755)
                 return p
         
-        # Se o binário não existir no Linux, compila automaticamente com 'make'
-        print("🛠️ Binário Linux não encontrado. Compilando CUDACyclone via NVCC...", flush=True)
+        # Adiciona caminhos padrão do CUDA Toolkit ao PATH no Linux/Colab/Kaggle
+        import shutil
+        if shutil.which("nvcc") is None:
+            for cuda_path in ["/usr/local/cuda/bin", "/usr/local/cuda-12/bin", "/usr/local/cuda-11/bin", "/usr/local/cuda-12.2/bin", "/usr/local/cuda-12.1/bin"]:
+                if os.path.exists(os.path.join(cuda_path, "nvcc")):
+                    os.environ["PATH"] = cuda_path + os.pathsep + os.environ.get("PATH", "")
+                    break
+
+        # Se o binário não existir no Linux, compila automaticamente com NVCC ou setup.sh
+        print("🛠️ Binário Linux não encontrado. Preparando ambiente CUDA/NVCC...", flush=True)
+        
+        if shutil.which("nvcc") is None:
+            print("📦 Instalando nvidia-cuda-toolkit no container/máquina Linux...", flush=True)
+            subprocess.run(["apt-get", "update", "-qq"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(["apt-get", "install", "-y", "-qq", "nvidia-cuda-toolkit", "build-essential"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
         if os.path.exists(CUDA_DIR):
+            print("⚙️ Compilando CUDACyclone via Makefile...", flush=True)
             res = subprocess.run(["make"], cwd=CUDA_DIR)
             compiled = os.path.join(CUDA_DIR, "CUDACyclone")
             if os.path.exists(compiled):
                 os.chmod(compiled, 0o755)
                 return compiled
+            
+            # Tenta executar o setup.sh como fallback
+            setup_script = os.path.join(CUDA_DIR, "setup.sh")
+            if os.path.exists(setup_script):
+                os.chmod(setup_script, 0o755)
+                subprocess.run(["bash", "setup.sh"], cwd=CUDA_DIR)
+                if os.path.exists(compiled):
+                    os.chmod(compiled, 0o755)
+                    return compiled
+
         return "./CUDACyclone"
 
 CUDA_EXE = resolve_cuda_exe()
