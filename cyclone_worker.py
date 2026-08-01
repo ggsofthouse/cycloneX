@@ -110,23 +110,28 @@ def resolve_rc_kangaroo():
         env=build_env
     )
     if cmake_ret.returncode == 0:
-        subprocess.run(
+        build_res = subprocess.run(
             ["cmake", "--build", "build", "--config", "Release", "--parallel"],
-            cwd=RC_DIR, env=build_env
+            cwd=RC_DIR, env=build_env, capture_output=True, text=True
         )
-        candidates = [
-            os.path.join(RC_DIR, "build", "bin", "rckangaroo"),   # cmake padrao
-            os.path.join(RC_DIR, "build", "bin", "RCKangaroo"),   # variante maiuscula
-            os.path.join(RC_DIR, "build", "rckangaroo"),
-            os.path.join(RC_DIR, "build", "RCKangaroo"),
-            os.path.join(RC_DIR, "rckangaroo"),
-            os.path.join(RC_DIR, "RCKangaroo"),
-        ]
-        for c in candidates:
-            if os.path.exists(c):
-                os.chmod(c, 0o755)
-                print("✅ RCKangaroo compilado com sucesso!", flush=True)
-                return c, "rckangaroo"
+        if build_res.returncode != 0:
+            print("❌ Erro de compilação no RCKangaroo:", flush=True)
+            print(build_res.stdout[-2000:] if build_res.stdout else "", flush=True)
+            print(build_res.stderr[-2000:] if build_res.stderr else "", flush=True)
+        else:
+            candidates = [
+                os.path.join(RC_DIR, "build", "bin", "rckangaroo"),   # cmake padrao
+                os.path.join(RC_DIR, "build", "bin", "RCKangaroo"),   # variante maiuscula
+                os.path.join(RC_DIR, "build", "rckangaroo"),
+                os.path.join(RC_DIR, "build", "RCKangaroo"),
+                os.path.join(RC_DIR, "rckangaroo"),
+                os.path.join(RC_DIR, "RCKangaroo"),
+            ]
+            for c in candidates:
+                if os.path.exists(c):
+                    os.chmod(c, 0o755)
+                    print("✅ RCKangaroo compilado com sucesso!", flush=True)
+                    return c, "rckangaroo"
 
     print("⚠️  Compilação do RCKangaroo falhou. Usando CUDACyclone como fallback.", flush=True)
     return None, None
