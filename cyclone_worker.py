@@ -77,15 +77,30 @@ def resolve_rc_kangaroo():
             print("❌ Falha ao clonar RCKangaroo.", flush=True)
             return None, None
 
+    # Patch no CMakeLists.txt do RCKangaroo para remover caminhos hardcoded de CUDA 12.8 que quebram no CUDA 13 / Lightning.ai
+    cmakelists = os.path.join(RC_DIR, "CMakeLists.txt")
+    if os.path.exists(cmakelists):
+        try:
+            with open(cmakelists, "r", encoding="utf-8", errors="ignore") as f:
+                c_content = f.read()
+            c_content = re.sub(r'set\s*\(\s*CUDAToolkit_ROOT.*?\)', '# removed hardcoded CUDAToolkit_ROOT', c_content)
+            c_content = re.sub(r'set\s*\(\s*CMAKE_CUDA_COMPILER.*?\)', '# removed hardcoded CMAKE_CUDA_COMPILER', c_content)
+            with open(cmakelists, "w", encoding="utf-8") as f:
+                f.write(c_content)
+        except Exception as e:
+            print(f"⚠️  Aviso patch CMakeLists: {e}", flush=True)
+
     # Detecta SM da GPU
     sm = detect_gpu_sm()
     print(f"⚙️  Compilando RCKangaroo para SM{sm}...", flush=True)
 
+    cuda_dir = os.path.dirname(os.path.dirname(nvcc_path))
     cmake_ret = subprocess.run(
         [
             "cmake", "-B", "build",
             f"-DCMAKE_CUDA_ARCHITECTURES={sm}",
             f"-DCMAKE_CUDA_COMPILER={nvcc_path}",
+            f"-DCUDAToolkit_ROOT={cuda_dir}",
         ],
         cwd=RC_DIR,
         env=build_env
