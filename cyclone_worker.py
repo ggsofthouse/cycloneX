@@ -90,6 +90,10 @@ def resolve_rc_kangaroo():
         except Exception as e:
             print(f"⚠️  Aviso patch CMakeLists: {e}", flush=True)
 
+    # Remove pasta de build antiga (se existir) para evitar que o CMakeCache.txt antigo com flags de CUDA 12.8 seja reutilizado
+    build_dir = os.path.join(RC_DIR, "build")
+    shutil.rmtree(build_dir, ignore_errors=True)
+
     # Detecta SM da GPU
     sm = detect_gpu_sm()
     print(f"⚙️  Compilando RCKangaroo para SM{sm}...", flush=True)

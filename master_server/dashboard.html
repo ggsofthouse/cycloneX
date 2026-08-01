@@ -327,7 +327,7 @@
                     <p class="text-secondary" style="font-size:0.75rem;margin-bottom:4px;">▶ <strong>Opção A</strong> — One-liner (mais rápido, sem histórico ZSH):</p>
                     <div class="position-relative mb-3">
                         <pre class="bg-black p-3 rounded border mono mb-0" id="lightningCode"
-                            style="border-color:rgba(255,180,0,0.3)!important;color:#ffd166;font-size:0.78rem;white-space:pre-wrap;word-break:break-all;">rm -rf cycloneX; git clone https://github.com/ggsofthouse/cycloneX.git cycloneX && cd cycloneX && python3 cyclone_worker.py --server http://valyrafi.com.br --name Cloud_GPU</pre>
+                            style="border-color:rgba(255,180,0,0.3)!important;color:#ffd166;font-size:0.78rem;white-space:pre-wrap;word-break:break-all;">cd ~; rm -rf cycloneX; git clone https://github.com/ggsofthouse/cycloneX.git cycloneX && cd cycloneX && python3 cyclone_worker.py --server http://valyrafi.com.br --name Cloud_GPU</pre>
                         <button class="btn btn-sm position-absolute top-0 end-0 m-2 mono"
                             style="background:rgba(255,180,0,0.15);border:1px solid rgba(255,180,0,0.4);color:#ffd166;font-size:0.7rem;"
                             onclick="copyToClipboard('lightningCode')">
@@ -338,8 +338,8 @@
                     <p class="text-secondary" style="font-size:0.75rem;margin-bottom:4px;">▶ <strong>Opção B</strong> — Rodando em background (fecha o terminal e continua):</p>
                     <div class="position-relative">
                         <pre class="bg-black p-3 rounded border mono mb-0" id="lightningCodeBg"
-                            style="border-color:rgba(255,180,0,0.2)!important;color:#ffc04d;font-size:0.78rem;white-space:pre-wrap;word-break:break-all;">rm -rf cycloneX; git clone https://github.com/ggsofthouse/cycloneX.git cycloneX && cd cycloneX && nohup python3 cyclone_worker.py --server http://valyrafi.com.br --name Cloud_GPU > worker.log 2>&1 &
-echo "Worker rodando em background. Logs: tail -f cycloneX/worker.log"</pre>
+                            style="border-color:rgba(255,180,0,0.2)!important;color:#ffc04d;font-size:0.78rem;white-space:pre-wrap;word-break:break-all;">cd ~; rm -rf cycloneX; git clone https://github.com/ggsofthouse/cycloneX.git cycloneX && cd cycloneX && nohup python3 cyclone_worker.py --server http://valyrafi.com.br --name Cloud_GPU > worker.log 2>&1 &
+echo "Worker rodando em background. Logs: tail -f ~/cycloneX/worker.log"</pre>
                         <button class="btn btn-sm position-absolute top-0 end-0 m-2 mono"
                             style="background:rgba(255,180,0,0.1);border:1px solid rgba(255,180,0,0.3);color:#ffc04d;font-size:0.7rem;"
                             onclick="copyToClipboard('lightningCodeBg')">
