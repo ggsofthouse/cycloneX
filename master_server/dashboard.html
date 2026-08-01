@@ -3,86 +3,179 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CycloneX Master Pool — Bitcoin Puzzle #140 Coordinator</title>
+    <title>CycloneX Master Coordinator — Bitcoin Puzzle #140 Pool</title>
+    <!-- Google Fonts & FontAwesome -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
     <style>
         :root {
-            --bg-dark: #0b0f19;
-            --card-bg: rgba(22, 30, 46, 0.75);
-            --border-glow: rgba(0, 242, 254, 0.2);
-            --accent-cyan: #00f2fe;
-            --accent-purple: #4facfe;
+            --bg-main: #05070e;
+            --bg-card: rgba(13, 19, 33, 0.7);
+            --neon-cyan: #00f2fe;
+            --neon-blue: #4facfe;
+            --neon-purple: #7f00ff;
+            --neon-green: #10b981;
+            --text-glow: rgba(0, 242, 254, 0.4);
+            --border-glass: rgba(0, 242, 254, 0.15);
         }
 
         body {
-            background-color: var(--bg-dark);
-            color: #e2e8f0;
-            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background-color: var(--bg-main);
+            color: #f1f5f9;
+            font-family: 'Outfit', sans-serif;
             min-height: 100vh;
+            background-image: 
+                radial-gradient(circle at 15% 20%, rgba(127, 0, 255, 0.12) 0%, transparent 45%),
+                radial-gradient(circle at 85% 80%, rgba(0, 242, 254, 0.12) 0%, transparent 45%);
+            background-attachment: fixed;
         }
 
+        .mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* Futuristic Glass Cards */
         .glass-card {
-            background: var(--card-bg);
-            backdrop-filter: blur(16px);
-            border: 1px solid var(--border-glow);
-            border-radius: 16px;
-            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+            background: var(--bg-card);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border: 1px solid var(--border-glass);
+            border-radius: 20px;
+            box-shadow: 0 10px 40px 0 rgba(0, 0, 0, 0.5);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .glass-card:hover {
+            border-color: rgba(0, 242, 254, 0.35);
+            box-shadow: 0 12px 48px 0 rgba(0, 242, 254, 0.15);
+        }
+
+        /* Neon Glow Typography */
+        .glow-title {
+            background: linear-gradient(135deg, #ffffff 0%, var(--neon-cyan) 50%, var(--neon-blue) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-shadow: 0 0 30px var(--text-glow);
         }
 
         .stat-val {
-            font-size: 2.2rem;
-            font-weight: 700;
-            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
+            font-size: 2.5rem;
+            font-weight: 800;
+            font-family: 'JetBrains Mono', monospace;
+            background: linear-gradient(135deg, var(--neon-cyan), var(--neon-blue));
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
+            text-shadow: 0 0 20px rgba(0, 242, 254, 0.3);
         }
 
-        .nav-header {
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-            padding: 1.2rem 0;
+        /* Live Pulsing Dot Indicator */
+        .pulse-dot {
+            width: 10px;
+            height: 10px;
+            background-color: var(--neon-green);
+            border-radius: 50%;
+            display: inline-block;
+            box-shadow: 0 0 12px var(--neon-green);
+            animation: pulse-green 2s infinite;
         }
 
-        .status-badge {
-            padding: 6px 16px;
-            border-radius: 20px;
-            font-size: 0.85rem;
-            font-weight: 600;
+        @keyframes pulse-green {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
         }
 
-        .badge-active {
-            background: rgba(16, 185, 129, 0.2);
-            color: #10b981;
-            border: 1px solid rgba(16, 185, 129, 0.3);
+        /* Custom Progress Bar */
+        .progress-futuristic {
+            height: 14px;
+            border-radius: 8px;
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            overflow: hidden;
         }
 
-        .progress-custom {
-            height: 12px;
-            border-radius: 6px;
-            background: rgba(255, 255, 255, 0.08);
+        .progress-bar-glow {
+            background: linear-gradient(90deg, var(--neon-purple), var(--neon-cyan));
+            box-shadow: 0 0 20px var(--neon-cyan);
+            border-radius: 8px;
+            transition: width 0.6s ease;
         }
 
-        .progress-bar-custom {
-            background: linear-gradient(90deg, #00f2fe, #4facfe);
-            border-radius: 6px;
+        .table-dark-custom {
+            --bs-table-bg: transparent;
+            --bs-table-color: #cbd5e1;
+            border-color: rgba(255, 255, 255, 0.08);
+        }
+
+        .table-dark-custom th {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #94a3b8;
+            border-bottom: 1px solid rgba(0, 242, 254, 0.2);
+        }
+
+        .btn-futuristic {
+            background: linear-gradient(135deg, var(--neon-cyan), var(--neon-blue));
+            color: #05070e;
+            font-weight: 700;
+            border: none;
+            border-radius: 12px;
+            padding: 10px 24px;
+            box-shadow: 0 4px 20px rgba(0, 242, 254, 0.3);
+            transition: all 0.3s ease;
+        }
+
+        .btn-futuristic:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 28px rgba(0, 242, 254, 0.5);
+            color: #000;
+        }
+
+        .modal-glass {
+            background: rgba(13, 19, 33, 0.95);
+            backdrop-filter: blur(28px);
+            border: 1px solid var(--border-glass);
+            border-radius: 24px;
+        }
+
+        .form-control-cyber {
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            color: #fff;
+            border-radius: 12px;
+            padding: 12px 16px;
+        }
+
+        .form-control-cyber:focus {
+            background: rgba(15, 23, 42, 0.95);
+            border-color: var(--neon-cyan);
+            color: #fff;
+            box-shadow: 0 0 16px rgba(0, 242, 254, 0.3);
         }
     </style>
 </head>
 <body>
 
     <!-- Header Navigation -->
-    <div class="nav-header mb-4">
+    <div class="py-4 border-bottom border-secondary border-opacity-10 mb-4">
         <div class="container d-flex justify-content-between align-items-center">
             <div class="d-flex align-items-center gap-3">
-                <i class="fa-solid fa-kangaroo text-info fs-2"></i>
+                <div class="p-2 rounded-3" style="background: rgba(0, 242, 254, 0.1); border: 1px solid var(--border-glass);">
+                    <i class="fa-solid fa-atom text-info fs-3"></i>
+                </div>
                 <div>
-                    <h4 class="mb-0 fw-bold">CycloneX Master Coordinator</h4>
-                    <small class="text-secondary">Bitcoin Puzzle #140 Pool System (valyrafi.com.br)</small>
+                    <h3 class="mb-0 fw-bold glow-title">CycloneX Master Coordinator</h3>
+                    <small class="text-secondary mono fs-7">valyrafi.com.br • Target: Bitcoin Puzzle #140</small>
                 </div>
             </div>
             <div id="authActions">
-                <button class="btn btn-outline-info rounded-pill px-4" onclick="showLoginModal()">
-                    <i class="fa-solid fa-right-to-bracket me-2"></i>Entrar no Painel
+                <button class="btn btn-futuristic" onclick="showLoginModal()">
+                    <i class="fa-solid fa-shield-halved me-2"></i>Acessar Painel
                 </button>
             </div>
         </div>
@@ -90,136 +183,150 @@
 
     <div class="container pb-5">
         
-        <!-- Alerta de Vitória / Solução Encontrada -->
-        <div id="solvedAlert" class="alert alert-success glass-card text-center d-none py-4 mb-4">
-            <h2 class="fw-bold mb-2">🎉🎉 PUZZLE #140 RESOLVIDO COM SUCESSO! 🎉🎉</h2>
-            <p class="fs-5 mb-0">A chave privada foi capturada e está salva em segurança no Cofre do Administrador!</p>
+        <!-- Banner de Solução / Chave Encontrada -->
+        <div id="solvedAlert" class="alert glass-card text-center d-none p-4 mb-4 border-success">
+            <h2 class="fw-extrabold text-success mb-2"><i class="fa-solid fa-trophy me-3"></i>BITCOIN PUZZLE #140 SOLUCIONADO!</h2>
+            <p class="fs-5 text-slate-300 mb-0">A chave privada foi capturada com sucesso e está armazenada em segurança no Cofre do Administrador!</p>
         </div>
 
         <!-- Métrica Principal do Cluster -->
         <div class="row g-4 mb-4">
             <div class="col-md-3">
                 <div class="glass-card p-4 text-center">
-                    <span class="text-secondary d-block mb-1">Poder Computacional Total</span>
+                    <span class="text-secondary text-uppercase fs-7 fw-semibold tracking-wider d-block mb-1">Hashes do Cluster</span>
                     <div id="totalSpeed" class="stat-val">0.000 Gkeys/s</div>
                 </div>
             </div>
             <div class="col-md-3">
                 <div class="glass-card p-4 text-center">
-                    <span class="text-secondary d-block mb-1">Nós / GPUs Conectadas</span>
+                    <span class="text-secondary text-uppercase fs-7 fw-semibold tracking-wider d-block mb-1">Nós GPUs Ativos</span>
                     <div id="activeWorkers" class="stat-val">0</div>
                 </div>
             </div>
             <div class="col-md-3">
                 <div class="glass-card p-4 text-center">
-                    <span class="text-secondary d-block mb-1">Janela de Ouro Concluída</span>
+                    <span class="text-secondary text-uppercase fs-7 fw-semibold tracking-wider d-block mb-1">Janela de Ouro (57-75%)</span>
                     <div id="completedPct" class="stat-val">0%</div>
                 </div>
             </div>
             <div class="col-md-3">
                 <div class="glass-card p-4 text-center">
-                    <span class="text-secondary d-block mb-1">Status da Varredura</span>
-                    <div class="mt-2"><span id="statusBadge" class="status-badge badge-active">ATIVO</span></div>
+                    <span class="text-secondary text-uppercase fs-7 fw-semibold tracking-wider d-block mb-1">Rede da Pool</span>
+                    <div class="mt-3 d-flex align-items-center justify-content-center gap-2">
+                        <span class="pulse-dot"></span>
+                        <span id="statusBadge" class="fw-bold text-success mono">ONLINE / ACTIVE</span>
+                    </div>
                 </div>
             </div>
         </div>
 
-        <!-- Barra de Progresso da Janela de Ouro -->
+        <!-- Barra de Progresso Futurista -->
         <div class="glass-card p-4 mb-4">
-            <div class="d-flex justify-content-between align-items-center mb-2">
-                <h6 class="fw-bold mb-0"><i class="fa-solid fa-bullseye text-info me-2"></i>Progresso da Janela de Ouro (57% a 75%)</h6>
-                <span id="slotsRatio" class="text-info fw-semibold">0 / 120 Slots</span>
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <div class="d-flex align-items-center gap-2">
+                    <i class="fa-solid fa-crosshairs text-info"></i>
+                    <h6 class="fw-bold mb-0 text-uppercase tracking-wider">Varredura Concentrada do Miolo (57% a 75%)</h6>
+                </div>
+                <span id="slotsRatio" class="mono text-info fw-bold">0 / 120 Slots</span>
             </div>
-            <div class="progress progress-custom">
-                <div id="progressBar" class="progress-bar progress-bar-custom" role="progressbar" style="width: 0%"></div>
+            <div class="progress progress-futuristic">
+                <div id="progressBar" class="progress-bar progress-bar-glow" role="progressbar" style="width: 0%"></div>
             </div>
         </div>
 
         <!-- Tabela de GPUs Ativas na Pool -->
         <div class="glass-card p-4 mb-4">
-            <h5 class="fw-bold mb-3"><i class="fa-solid fa-microchip text-info me-2"></i>GPUs / Nós Colaboradores Ativos</h5>
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="fw-bold mb-0"><i class="fa-solid fa-network-wired text-info me-2"></i>Telemetria das GPUs Conectadas</h5>
+                <span class="badge bg-dark border border-secondary text-secondary mono">Atualização: 3s</span>
+            </div>
             <div class="table-responsive">
-                <table class="table table-dark table-hover mb-0">
+                <table class="table table-dark-custom align-middle mb-0">
                     <thead>
                         <tr>
-                            <th>Identificador do Nó</th>
+                            <th>Nó / Worker ID</th>
                             <th>Modelo de GPU</th>
                             <th>Velocidade Instantânea</th>
-                            <th>Status</th>
+                            <th>Status de Varredura</th>
                         </tr>
                     </thead>
                     <tbody id="workersTable">
-                        <tr><td colspan="4" class="text-center text-secondary py-3">Carregando telemetria em tempo real...</td></tr>
+                        <tr><td colspan="4" class="text-center text-secondary py-4 mono">Aguardando nós GPUs transmitirem dados...</td></tr>
                     </tbody>
                 </table>
             </div>
         </div>
 
-        <!-- PAINEL EXCLUSIVO DO ADMIN (Só visível se logado como Admin) -->
-        <div id="adminSection" class="glass-card p-4 d-none mb-4">
-            <h4 class="fw-bold text-info mb-4"><i class="fa-solid fa-user-shield me-2"></i>Painel do Administrador (Gerenciamento de Cotistas)</h4>
+        <!-- PAINEL EXCLUSIVO DO ADMIN -->
+        <div id="adminSection" class="glass-card p-4 d-none mb-4 border-info">
+            <h4 class="fw-bold text-info mb-4"><i class="fa-solid fa-user-gear me-2"></i>Painel do Administrador Supremo</h4>
             
             <!-- Cofre de Chaves do Admin -->
             <div class="mb-4">
-                <h6 class="fw-bold text-warning mb-2"><i class="fa-solid fa-vault me-2"></i>Cofre de Soluções (Chaves Encontradas)</h6>
-                <div id="vaultContent" class="p-3 bg-dark rounded border border-warning">
+                <h6 class="fw-bold text-warning mb-2"><i class="fa-solid fa-key me-2"></i>Cofre Criptografado de Soluções</h6>
+                <div id="vaultContent" class="p-4 bg-dark bg-opacity-75 rounded-4 border border-warning border-opacity-25 mono">
                     <em class="text-secondary">Nenhuma chave privada registrada no cofre até o momento.</em>
                 </div>
             </div>
 
             <!-- Criar Novo Cotista -->
-            <div class="row g-3 mb-4">
-                <div class="col-md-4">
-                    <input type="text" id="newUsername" class="form-control bg-dark text-white border-secondary" placeholder="Nome do Cotista / Membro">
-                </div>
-                <div class="col-md-4">
-                    <input type="password" id="newPassword" class="form-control bg-dark text-white border-secondary" placeholder="Senha de Acesso">
-                </div>
-                <div class="col-md-3">
-                    <input type="number" id="newQuota" class="form-control bg-dark text-white border-secondary" placeholder="Cota % (ex: 1.0)" value="1.0">
-                </div>
-                <div class="col-md-1">
-                    <button class="btn btn-info w-100" onclick="createUser()"><i class="fa-solid fa-plus"></i></button>
+            <div class="card glass-card p-3 mb-4 border-secondary">
+                <h6 class="fw-bold mb-3"><i class="fa-solid fa-user-plus text-info me-2"></i>Adicionar Novo Cotista / Colaborador</h6>
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <input type="text" id="newUsername" class="form-control form-control-cyber" placeholder="Nome de Usuário">
+                    </div>
+                    <div class="col-md-4">
+                        <input type="password" id="newPassword" class="form-control form-control-cyber" placeholder="Senha de Acesso">
+                    </div>
+                    <div class="col-md-3">
+                        <input type="number" id="newQuota" class="form-control form-control-cyber" placeholder="Cota (%)" value="1.0">
+                    </div>
+                    <div class="col-md-1">
+                        <button class="btn btn-futuristic w-100 h-100" onclick="createUser()"><i class="fa-solid fa-check"></i></button>
+                    </div>
                 </div>
             </div>
 
             <!-- Lista de Cotistas Cadastrados -->
-            <h6 class="fw-bold mb-3">Cotistas & Membros Cadastrados</h6>
-            <table class="table table-dark table-striped">
-                <thead>
-                    <tr>
-                        <th>Usuário</th>
-                        <th>Função</th>
-                        <th>Cota do Prêmio (%)</th>
-                        <th>Data de Cadastro</th>
-                        <th>Ações</th>
-                    </tr>
-                </thead>
-                <tbody id="usersTable"></tbody>
-            </table>
+            <h6 class="fw-bold mb-3">Gestão de Cotistas e Membros da Pool</h6>
+            <div class="table-responsive">
+                <table class="table table-dark-custom align-middle">
+                    <thead>
+                        <tr>
+                            <th>Usuário</th>
+                            <th>Função</th>
+                            <th>Cota do Prêmio (%)</th>
+                            <th>Data de Cadastro</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="usersTable"></tbody>
+                </table>
+            </div>
         </div>
 
     </div>
 
-    <!-- Modal de Login -->
+    <!-- Modal de Login Futurista -->
     <div class="modal fade" id="loginModal" tabindex="-1">
         <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content glass-card text-white">
-                <div class="modal-header border-secondary">
-                    <h5 class="modal-title"><i class="fa-solid fa-lock text-info me-2"></i>Autenticação na Pool</h5>
+            <div class="modal-content modal-glass text-white p-2">
+                <div class="modal-header border-0 pb-0">
+                    <h5 class="modal-title fw-bold glow-title"><i class="fa-solid fa-lock text-info me-2"></i>Acesso à Pool</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
-                <div class="modal-body">
+                <div class="modal-body pt-4">
                     <div class="mb-3">
-                        <label class="form-label">Usuário</label>
-                        <input type="text" id="loginUser" class="form-control bg-dark text-white border-secondary">
+                        <label class="form-label text-secondary fs-7 text-uppercase fw-bold">Usuário</label>
+                        <input type="text" id="loginUser" class="form-control form-control-cyber">
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label">Senha</label>
-                        <input type="password" id="loginPass" class="form-control bg-dark text-white border-secondary">
+                    <div class="mb-4">
+                        <label class="form-label text-secondary fs-7 text-uppercase fw-bold">Senha de Segurança</label>
+                        <input type="password" id="loginPass" class="form-control form-control-cyber">
                     </div>
                     <div id="loginError" class="text-danger small mb-3 d-none"></div>
-                    <button class="btn btn-info w-100 fw-bold py-2" onclick="performLogin()">Entrar</button>
+                    <button class="btn btn-futuristic w-100 py-3 fs-6" onclick="performLogin()">ENTRAR NO PAINEL</button>
                 </div>
             </div>
         </div>
@@ -264,14 +371,14 @@
                 if (data.workers && data.workers.length > 0) {
                     wTable.innerHTML = data.workers.map(w => `
                         <tr>
-                            <td class="fw-bold text-info">${w.name}</td>
+                            <td class="fw-bold text-info mono">${w.name}</td>
                             <td>${w.gpu}</td>
-                            <td class="fw-semibold">${w.speed_mkeys.toFixed(1)} Mkeys/s</td>
-                            <td><span class="badge bg-success">EXECUTANDO</span></td>
+                            <td class="fw-bold mono text-cyan">${w.speed_mkeys.toFixed(1)} Mkeys/s</td>
+                            <td><span class="badge bg-success bg-opacity-20 text-success border border-success border-opacity-20 rounded-pill px-3">EXECUTANDO</span></td>
                         </tr>
                     `).join('');
                 } else {
-                    wTable.innerHTML = `<tr><td colspan="4" class="text-center text-secondary py-3">Nenhuma GPU enviando dados no momento.</td></tr>`;
+                    wTable.innerHTML = `<tr><td colspan="4" class="text-center text-secondary py-4 mono">Nenhuma GPU conectada no momento.</td></tr>`;
                 }
             } catch (e) {
                 console.error(e);
@@ -295,7 +402,7 @@
                     body: JSON.stringify({ username: u, password: p })
                 });
                 if (!res.ok) {
-                    throw new Error("Usuário ou senha inválidos");
+                    throw new Error("Usuário ou senha incorretos");
                 }
                 const data = await res.json();
                 authToken = data.token;
@@ -313,8 +420,8 @@
             if (!currentUser) return;
             document.getElementById("authActions").innerHTML = `
                 <div class="d-flex align-items-center gap-3">
-                    <span class="text-info fw-bold"><i class="fa-solid fa-user-circle me-1"></i>${currentUser.username} (${currentUser.role})</span>
-                    <button class="btn btn-outline-danger btn-sm rounded-pill" onclick="logout()">Sair</button>
+                    <span class="text-info fw-bold mono"><i class="fa-solid fa-user-astronaut me-1"></i>${currentUser.username} (${currentUser.role})</span>
+                    <button class="btn btn-outline-danger btn-sm rounded-pill px-3" onclick="logout()">Sair</button>
                 </div>
             `;
             if (currentUser.role === "admin") {
@@ -330,33 +437,31 @@
 
         async function loadAdminData() {
             if (!authToken) return;
-            // Carregar Cotistas
             const resU = await fetch("/api/admin/users", { headers: { "Authorization": "Bearer " + authToken } });
             if (resU.ok) {
                 const users = await resU.json();
                 document.getElementById("usersTable").innerHTML = users.map(u => `
                     <tr>
-                        <td>${u.username}</td>
+                        <td class="fw-bold mono">${u.username}</td>
                         <td><span class="badge ${u.role === 'admin' ? 'bg-danger' : 'bg-info'}">${u.role}</span></td>
-                        <td>${u.quota_percent}%</td>
-                        <td>${new Date(u.created_at).toLocaleString()}</td>
+                        <td class="fw-bold text-cyan">${u.quota_percent}%</td>
+                        <td class="text-secondary fs-7">${new Date(u.created_at).toLocaleString()}</td>
                         <td>
                             ${u.username !== 'admin' ? `<button class="btn btn-sm btn-outline-danger" onclick="deleteUser('${u.username}')"><i class="fa-solid fa-trash"></i></button>` : ''}
                         </td>
                     </tr>
                 `).join('');
             }
-            // Carregar Cofre
             const resV = await fetch("/api/admin/vault", { headers: { "Authorization": "Bearer " + authToken } });
             if (resV.ok) {
                 const vault = await resV.json();
                 const vaultDiv = document.getElementById("vaultContent");
                 if (vault.length > 0) {
                     vaultDiv.innerHTML = vault.map(v => `
-                        <div class="p-2 mb-2 bg-black rounded border border-success">
-                            <strong class="text-success">🎉 PUZZLE #${v.puzzle} ENCONTRADO!</strong><br>
+                        <div class="p-3 mb-2 bg-black rounded-3 border border-success">
+                            <strong class="text-success fs-5">🎉 PUZZLE #${v.puzzle} ENCONTRADO!</strong><br>
                             <strong>Nó / GPU:</strong> ${v.found_by_worker}<br>
-                            <strong>Chave Privada HEX:</strong> <code class="text-warning fs-5">${v.private_key_hex}</code><br>
+                            <strong>Chave Privada HEX:</strong> <code class="text-warning fs-4 d-block my-2">${v.private_key_hex}</code>
                             <small class="text-secondary">Encontrado em: ${new Date(v.found_at).toLocaleString()}</small>
                         </div>
                     `).join('');
