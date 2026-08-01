@@ -396,7 +396,28 @@
             loginModalObj = new bootstrap.Modal(document.getElementById('loginModal'));
             refreshStats();
             setInterval(refreshStats, 3000);
+            if (authToken) {
+                checkAuth();
+            }
         });
+
+        async function checkAuth() {
+            if (!authToken) return;
+            try {
+                const res = await fetch("/api/auth/me", {
+                    headers: { "Authorization": "Bearer " + authToken }
+                });
+                if (res.ok) {
+                    currentUser = await res.json();
+                    updateUIForUser();
+                } else {
+                    localStorage.removeItem("cyclone_token");
+                    authToken = null;
+                }
+            } catch (e) {
+                console.error("Auth check failed:", e);
+            }
+        }
 
         async function refreshStats() {
             try {

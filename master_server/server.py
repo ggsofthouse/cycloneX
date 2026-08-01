@@ -93,22 +93,26 @@ def init_db():
         )
     ''')
 
-    # Garantir a existência do usuário ADMIN principal (Lê de variável de ambiente ou arquivo local seguro na VPS)
-    admin_user = os.environ.get("ADMIN_USER", "admin")
-    admin_pass = os.environ.get("ADMIN_PASS", "admin12345")
+    # Garantir a existência do usuário ADMIN principal
+    admin_user = os.environ.get("ADMIN_USER", "Fogaca05")
+    admin_pass = os.environ.get("ADMIN_PASS", "Ti210911@")
     
-    # Se existir arquivo local de configuração de admin na VPS (não enviado ao Git)
-    admin_cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "admin_credentials.json")
-    if not os.path.exists(admin_cfg_path):
-        admin_cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "master_server", "admin_credentials.json")
-    if os.path.exists(admin_cfg_path):
-        try:
-            with open(admin_cfg_path, 'r') as f:
-                cfg = json.load(f)
-                admin_user = cfg.get("username", admin_user)
-                admin_pass = cfg.get("password", admin_pass)
-        except Exception:
-            pass
+    # Se existir arquivo local de configuração de admin na VPS
+    for path in [
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "admin_credentials.json"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "master_server", "admin_credentials.json"),
+        "/opt/cyclone-master/admin_credentials.json",
+        "/opt/cyclone-master/master_server/admin_credentials.json"
+    ]:
+        if os.path.exists(path):
+            try:
+                with open(path, 'r') as f:
+                    cfg = json.load(f)
+                    admin_user = cfg.get("username", admin_user)
+                    admin_pass = cfg.get("password", admin_pass)
+                    break
+            except Exception:
+                pass
 
     pwd_hash = hashlib.sha256((admin_pass + SECRET_KEY).encode()).hexdigest()
     c.execute("SELECT id FROM users WHERE role = 'admin'")
@@ -144,6 +148,7 @@ def init_db():
     conn.commit()
     conn.close()
 
+# Inicializa o banco de dados na partida do servidor
 init_db()
 
 app = FastAPI(title="CycloneX Master Server", version="3.0")
@@ -157,7 +162,7 @@ app.add_middleware(
 
 security = HTTPBearer()
 
-# Modelos Pydantic
+# Modelos Pydantic para Requisições
 class LoginRequest(BaseModel):
     username: str
     password: str
@@ -166,6 +171,11 @@ class UserCreate(BaseModel):
     username: str
     password: str
     quota_percent: float = 1.0
+
+class WorkerRegister(BaseModel):
+    worker_id: str
+    worker_name: str
+    gpu_name: str
 
 class WorkerHeartbeat(BaseModel):
     worker_id: str
@@ -188,10 +198,10 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
     # Token formato: username:hash
     try:
         username, thash = token.split(":", 1)
-        c.execute("SELECT username, role, quota_percent FROM users WHERE username = ?", (username,))
+        c.execute("SELECT username, role, quota_percent, password_hash FROM users WHERE username = ?", (username,))
         u = c.fetchone()
         conn.close()
-        if u and hmac.compare_digest(thash, hashlib.sha256((username + SECRET_KEY).encode()).hexdigest()):
+        if u and hmac.compare_digest(thash, u[3]):
             return {"username": u[0], "role": u[1], "quota_percent": u[2]}
     except Exception:
         conn.close()
@@ -219,6 +229,10 @@ def login(req: LoginRequest):
     
     token = f"{user[0]}:{pwd_hash}"
     return {"token": token, "username": user[0], "role": user[1], "quota_percent": user[2]}
+
+@app.get("/api/auth/me")
+def get_me(user: dict = Depends(verify_token)):
+    return user
 
 class ChangePasswordRequest(BaseModel):
     new_password: str
