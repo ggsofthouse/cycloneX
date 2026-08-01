@@ -1,9 +1,0 @@
-[CUDACyclone] Executando KangarooSolver no GPU...
-[Kangaroo] Inicializando Pollard's Kangaroo Solver...
-[Kangaroo] Bit-length do range: 30 | Saltos: 2^8 a 2^16 | DP Bits: 12
-[Kangaroo] Target Pubkey X: 0D282CF2FF536D2C42F105D0B8588821A915DC3F9A05BD98BB23AF67A2E92A5B
-[Kangaroo] Target Pubkey Y: 0000000000000000000000000000000000000000000000000000000000000000
-[Kangaroo] Fase 1: Gerando armadilhas Tame no alvo...
-[Kangaroo] Fase 1 Concluída: 4080 armadilhas Tame armadas!
-[Kangaroo] Fase 2: Soltando Kangaroos Selvagens para caçar...
-Time:    2.9 s | Speed:    5.76 Mkeys/s | Count:       16777216 | Chunks:   4080   Time:    4.3 s | Speed:    7.82 Mkeys/s | Count:       33554432 | Chunks:   4080   Time:    5.7 s | Speed:    8.88 Mkeys/s | Count:       50331648 | Chunks:   4080   Time:    7.0 s | Speed:    9.52 Mkeys/s | Count:       67108864 | Chunks:   4080   Time:    8.4 s | Speed:    9.95 Mkeys/s | Count:       83886080 | Chunks:   4080   Time:    9.8 s | Speed:   10.27 Mkeys/s | Count:      100663296 | Chunks:   4080   Time:   11.2 s | Speed:   10.50 Mkeys/s | Count:      117440512 | Chunks:   4080   Time:   12.6 s | Speed:   10.69 Mkeys/s | Count:      134217728 | Chunks:   4080   Time:   13.9 s | Speed:   10.84 Mkeys/s | Count:      150994944 | Chunks:   4080   Time:   15.3 s | Speed:   10.96 Mkeys/s | Count:      167772160 | Chunks:   4080   Time:   16.7 s | Speed:   11.06 Mkeys/s | Count:      184549376 | Chunks:   4080   Time:   18.1 s | Speed:   11.15 Mkeys/s | Count:      201326592 | Chunks:   4080   Time:   19.4 s | Speed:   11.22 Mkeys/s | Count:      218103808 | Chunks:   4080   Time:   20.8 s | Speed:   11.28 Mkeys/s | Count:      234881024 | Chunks:   4080   Time:   22.3 s | Speed:   11.30 Mkeys/s | Count:      251658240 | Chunks:   4080   Time:   23.7 s | Speed:   11.35 Mkeys/s | Count:      268435456 | Chunks:   4080   Time:   25.0 s | Speed:   11.41 Mkeys/s | Count:      285212672 | Chunks:   4080   
