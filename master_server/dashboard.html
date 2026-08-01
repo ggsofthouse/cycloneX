@@ -280,42 +280,137 @@
 
         <!-- SEÇÃO DE CONEXÃO DIRETA (COPIAR E COLAR CÓDIGO) -->
         <div class="glass-card p-4 mb-4">
-            <div class="d-flex justify-content-between align-items-center mb-3">
-                <h5 class="fw-bold mb-0"><i class="fa-solid fa-terminal text-info me-2"></i>Conectar Sua GPU / Máquina à Pool</h5>
-                <ul class="nav nav-pills" id="connectTabs" role="tablist">
-                    <li class="nav-item">
-                        <button class="nav-link active bg-dark text-info border border-secondary px-3 py-1 fs-7 mono" id="lightning-tab" data-bs-toggle="tab" data-bs-target="#lightning-pane">Lightning.ai / Linux / RunPod</button>
-                    </li>
-                    <li class="nav-item ms-2">
-                        <button class="nav-link bg-dark text-info border border-secondary px-3 py-1 fs-7 mono" id="notebook-tab" data-bs-toggle="tab" data-bs-target="#notebook-pane">Google Colab / Kaggle</button>
-                    </li>
-                    <li class="nav-item ms-2">
-                        <button class="nav-link bg-dark text-info border border-secondary px-3 py-1 fs-7 mono" id="cmd-tab" data-bs-toggle="tab" data-bs-target="#cmd-pane">Windows CMD</button>
-                    </li>
-                </ul>
+            <!-- Header com badge do motor -->
+            <div class="d-flex justify-content-between align-items-center mb-1">
+                <h5 class="fw-bold mb-0"><i class="fa-solid fa-terminal text-info me-2"></i>Conectar Sua GPU à Pool</h5>
+                <span class="badge px-3 py-2 mono" style="background:linear-gradient(135deg,#7f00ff,#00f2fe);font-size:0.7rem;letter-spacing:1px;">
+                    🦘 Motor: RCKangaroo SOTA K=1.15 &nbsp;|&nbsp; 1.8× mais rápido
+                </span>
             </div>
+            <p class="text-secondary small mb-3">Worker v4.0 — auto-instala RCKangaroo (motor SOTA) no Linux/Colab. Windows usa CUDACyclone.</p>
+
+            <!-- Tabs -->
+            <ul class="nav nav-pills mb-3 gap-2" id="connectTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active mono px-3 py-1" id="lightning-tab"
+                        data-bs-toggle="tab" data-bs-target="#lightning-pane"
+                        style="background:rgba(255,180,0,0.15);border:1px solid rgba(255,180,0,0.4);color:#ffd166;font-size:0.75rem;">
+                        <i class="fa-solid fa-bolt me-1"></i>Lightning.ai / Linux / RunPod
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link mono px-3 py-1" id="notebook-tab"
+                        data-bs-toggle="tab" data-bs-target="#notebook-pane"
+                        style="background:rgba(0,242,254,0.1);border:1px solid rgba(0,242,254,0.3);color:#00f2fe;font-size:0.75rem;">
+                        <i class="fa-solid fa-book-bookmark me-1"></i>Google Colab / Kaggle
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link mono px-3 py-1" id="cmd-tab"
+                        data-bs-toggle="tab" data-bs-target="#cmd-pane"
+                        style="background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.3);color:#10b981;font-size:0.75rem;">
+                        <i class="fa-brands fa-windows me-1"></i>Windows CMD / PowerShell
+                    </button>
+                </li>
+            </ul>
+
+            <!-- Tab Content -->
             <div class="tab-content">
-                <div class="tab-pane fade show active" id="lightning-pane">
-                    <p class="text-secondary small mb-2"><i class="fa-solid fa-bolt text-warning me-1"></i>Cole no Terminal de Instâncias Linux com GPU (<strong>Lightning.ai, RunPod, Vast.ai, Linux ZSH/Bash</strong>):</p>
+
+                <!-- ══ TAB 1: Lightning.ai / Linux / RunPod ══ -->
+                <div class="tab-pane fade show active" id="lightning-pane" role="tabpanel">
+                    <div class="d-flex align-items-center gap-2 mb-2">
+                        <span class="badge bg-warning text-dark mono" style="font-size:0.65rem;">ZSH / BASH</span>
+                        <span class="text-secondary small">Lightning.ai · RunPod · Vast.ai · VMs Linux — <strong class="text-warning">Auto-instala RCKangaroo SOTA</strong></span>
+                    </div>
+                    <!-- Passo 1: one-liner rápido -->
+                    <p class="text-secondary" style="font-size:0.75rem;margin-bottom:4px;">▶ <strong>Opção A</strong> — One-liner (mais rápido, sem histórico ZSH):</p>
+                    <div class="position-relative mb-3">
+                        <pre class="bg-black p-3 rounded border mono mb-0" id="lightningCode"
+                            style="border-color:rgba(255,180,0,0.3)!important;color:#ffd166;font-size:0.78rem;white-space:pre-wrap;word-break:break-all;">rm -rf cycloneX; git clone https://github.com/ggsofthouse/cycloneX.git cycloneX && cd cycloneX && python3 cyclone_worker.py --server http://valyrafi.com.br --name Cloud_GPU</pre>
+                        <button class="btn btn-sm position-absolute top-0 end-0 m-2 mono"
+                            style="background:rgba(255,180,0,0.15);border:1px solid rgba(255,180,0,0.4);color:#ffd166;font-size:0.7rem;"
+                            onclick="copyToClipboard('lightningCode')">
+                            <i class="fa-solid fa-copy me-1"></i>Copiar
+                        </button>
+                    </div>
+                    <!-- Passo 2: background -->
+                    <p class="text-secondary" style="font-size:0.75rem;margin-bottom:4px;">▶ <strong>Opção B</strong> — Rodando em background (fecha o terminal e continua):</p>
                     <div class="position-relative">
-                        <pre class="bg-black p-3 rounded border border-secondary text-warning mono mb-0" id="lightningCode">rm -rf cycloneX; git clone https://github.com/ggsofthouse/cycloneX.git cycloneX && cd cycloneX && python3 cyclone_worker.py --server http://valyrafi.com.br --name Cloud_GPU</pre>
-                        <button class="btn btn-sm btn-outline-info position-absolute top-0 end-0 m-2" onclick="copyToClipboard('lightningCode')"><i class="fa-solid fa-copy me-1"></i>Copiar</button>
+                        <pre class="bg-black p-3 rounded border mono mb-0" id="lightningCodeBg"
+                            style="border-color:rgba(255,180,0,0.2)!important;color:#ffc04d;font-size:0.78rem;white-space:pre-wrap;word-break:break-all;">rm -rf cycloneX; git clone https://github.com/ggsofthouse/cycloneX.git cycloneX && cd cycloneX && nohup python3 cyclone_worker.py --server http://valyrafi.com.br --name Cloud_GPU > worker.log 2>&1 &
+echo "Worker rodando em background. Logs: tail -f cycloneX/worker.log"</pre>
+                        <button class="btn btn-sm position-absolute top-0 end-0 m-2 mono"
+                            style="background:rgba(255,180,0,0.1);border:1px solid rgba(255,180,0,0.3);color:#ffc04d;font-size:0.7rem;"
+                            onclick="copyToClipboard('lightningCodeBg')">
+                            <i class="fa-solid fa-copy me-1"></i>Copiar
+                        </button>
                     </div>
                 </div>
-                <div class="tab-pane fade" id="notebook-pane">
-                    <p class="text-secondary small mb-2"><i class="fa-solid fa-book-bookmark text-info me-1"></i>Cole direto na <strong>Célula de Código do Google Colab / Kaggle</strong> (com <code>!</code> no início):</p>
+
+                <!-- ══ TAB 2: Google Colab / Kaggle ══ -->
+                <div class="tab-pane fade" id="notebook-pane" role="tabpanel">
+                    <div class="d-flex align-items-center gap-2 mb-2">
+                        <span class="badge mono" style="background:rgba(0,242,254,0.2);color:#00f2fe;font-size:0.65rem;">NOTEBOOK CELL</span>
+                        <span class="text-secondary small">Google Colab · Kaggle — use <code style="color:#00f2fe;">!</code> no início de cada linha</span>
+                    </div>
+                    <!-- Célula única -->
+                    <p class="text-secondary" style="font-size:0.75rem;margin-bottom:4px;">▶ Cole em uma célula de código e execute:</p>
+                    <div class="position-relative mb-3">
+                        <pre class="bg-black p-3 rounded border mono mb-0" id="notebookCode"
+                            style="border-color:rgba(0,242,254,0.3)!important;color:#00f2fe;font-size:0.78rem;white-space:pre-wrap;word-break:break-all;">!rm -rf cycloneX
+!git clone https://github.com/ggsofthouse/cycloneX.git cycloneX
+%cd cycloneX
+!python3 cyclone_worker.py --server http://valyrafi.com.br --name Colab_Kaggle_GPU</pre>
+                        <button class="btn btn-sm position-absolute top-0 end-0 m-2 mono"
+                            style="background:rgba(0,242,254,0.1);border:1px solid rgba(0,242,254,0.3);color:#00f2fe;font-size:0.7rem;"
+                            onclick="copyToClipboard('notebookCode')">
+                            <i class="fa-solid fa-copy me-1"></i>Copiar
+                        </button>
+                    </div>
+                    <!-- run_kaggle.py alternativo -->
+                    <p class="text-secondary" style="font-size:0.75rem;margin-bottom:4px;">▶ <strong>Alternativa</strong> — Script dedicado <code style="color:#00f2fe;">run_kaggle.py</code> (recomendado para sessões longas):</p>
                     <div class="position-relative">
-                        <pre class="bg-black p-3 rounded border border-secondary text-info mono mb-0" id="notebookCode">!rm -rf cycloneX; git clone https://github.com/ggsofthouse/cycloneX.git cycloneX && cd cycloneX && python3 cyclone_worker.py --server http://valyrafi.com.br --name Colab_Kaggle_GPU</pre>
-                        <button class="btn btn-sm btn-outline-info position-absolute top-0 end-0 m-2" onclick="copyToClipboard('notebookCode')"><i class="fa-solid fa-copy me-1"></i>Copiar</button>
+                        <pre class="bg-black p-3 rounded border mono mb-0" id="notebookCode2"
+                            style="border-color:rgba(0,242,254,0.2)!important;color:#4facfe;font-size:0.78rem;white-space:pre-wrap;word-break:break-all;">!rm -rf cycloneX && git clone https://github.com/ggsofthouse/cycloneX.git cycloneX && cd cycloneX && python3 run_kaggle.py</pre>
+                        <button class="btn btn-sm position-absolute top-0 end-0 m-2 mono"
+                            style="background:rgba(0,242,254,0.08);border:1px solid rgba(0,242,254,0.2);color:#4facfe;font-size:0.7rem;"
+                            onclick="copyToClipboard('notebookCode2')">
+                            <i class="fa-solid fa-copy me-1"></i>Copiar
+                        </button>
                     </div>
                 </div>
-                <div class="tab-pane fade" id="cmd-pane">
-                    <p class="text-secondary small mb-2"><i class="fa-solid fa-desktop text-success me-1"></i>Cole no <strong>Prompt de Comando (Windows CMD)</strong> do seu PC:</p>
+
+                <!-- ══ TAB 3: Windows CMD ══ -->
+                <div class="tab-pane fade" id="cmd-pane" role="tabpanel">
+                    <div class="d-flex align-items-center gap-2 mb-2">
+                        <span class="badge mono" style="background:rgba(16,185,129,0.2);color:#10b981;font-size:0.65rem;">CMD / POWERSHELL</span>
+                        <span class="text-secondary small">PC Windows com RTX — usa <strong class="text-success">CUDACyclone</strong> (RCKangaroo em breve via WSL)</span>
+                    </div>
+                    <!-- CMD -->
+                    <p class="text-secondary" style="font-size:0.75rem;margin-bottom:4px;">▶ <strong>Prompt de Comando (CMD)</strong>:</p>
+                    <div class="position-relative mb-3">
+                        <pre class="bg-black p-3 rounded border mono mb-0" id="cmdCode"
+                            style="border-color:rgba(16,185,129,0.3)!important;color:#10b981;font-size:0.78rem;white-space:pre-wrap;word-break:break-all;">if exist cycloneX rmdir /s /q cycloneX & git clone https://github.com/ggsofthouse/cycloneX.git cycloneX && cd cycloneX && python cyclone_worker.py --server http://valyrafi.com.br --name MinhaGPU</pre>
+                        <button class="btn btn-sm position-absolute top-0 end-0 m-2 mono"
+                            style="background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.3);color:#10b981;font-size:0.7rem;"
+                            onclick="copyToClipboard('cmdCode')">
+                            <i class="fa-solid fa-copy me-1"></i>Copiar
+                        </button>
+                    </div>
+                    <!-- PowerShell -->
+                    <p class="text-secondary" style="font-size:0.75rem;margin-bottom:4px;">▶ <strong>PowerShell</strong>:</p>
                     <div class="position-relative">
-                        <pre class="bg-black p-3 rounded border border-secondary text-success mono mb-0" id="cmdCode">if exist cycloneX rmdir /s /q cycloneX & git clone https://github.com/ggsofthouse/cycloneX.git cycloneX && cd cycloneX && python cyclone_worker.py --server http://valyrafi.com.br --name MinhaGPU</pre>
-                        <button class="btn btn-sm btn-outline-info position-absolute top-0 end-0 m-2" onclick="copyToClipboard('cmdCode')"><i class="fa-solid fa-copy me-1"></i>Copiar</button>
+                        <pre class="bg-black p-3 rounded border mono mb-0" id="psCode"
+                            style="border-color:rgba(16,185,129,0.2)!important;color:#34d399;font-size:0.78rem;white-space:pre-wrap;word-break:break-all;">if (Test-Path cycloneX) { Remove-Item -Recurse -Force cycloneX }; git clone https://github.com/ggsofthouse/cycloneX.git cycloneX; cd cycloneX; python cyclone_worker.py --server http://valyrafi.com.br --name MinhaGPU</pre>
+                        <button class="btn btn-sm position-absolute top-0 end-0 m-2 mono"
+                            style="background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.2);color:#34d399;font-size:0.7rem;"
+                            onclick="copyToClipboard('psCode')">
+                            <i class="fa-solid fa-copy me-1"></i>Copiar
+                        </button>
                     </div>
                 </div>
+
             </div>
         </div>
 
