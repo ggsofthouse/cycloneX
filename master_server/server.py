@@ -99,6 +99,8 @@ def init_db():
     
     # Se existir arquivo local de configuração de admin na VPS (não enviado ao Git)
     admin_cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "admin_credentials.json")
+    if not os.path.exists(admin_cfg_path):
+        admin_cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "master_server", "admin_credentials.json")
     if os.path.exists(admin_cfg_path):
         try:
             with open(admin_cfg_path, 'r') as f:
@@ -380,6 +382,9 @@ def dashboard_stats():
     c.execute("SELECT COUNT(*) FROM vault WHERE puzzle = 140")
     has_found_key = c.fetchone()[0] > 0
     
+    c.execute("SELECT slot_index, pct_start, pct_end, status, assigned_worker, completed_at FROM jobs WHERE puzzle = 140 ORDER BY slot_index ASC")
+    all_jobs = c.fetchall()
+    
     conn.close()
     
     return {
@@ -392,7 +397,16 @@ def dashboard_stats():
         "assigned_slots": assigned_jobs,
         "total_slots": 120,
         "solved": has_found_key,
-        "workers": [{"name": w[1], "gpu": w[2], "speed_mkeys": w[3]} for w in active_workers]
+        "workers": [{"name": w[1], "gpu": w[2], "speed_mkeys": w[3]} for w in active_workers],
+        "jobs": [
+            {
+                "slot_index": j[0],
+                "pct_range": f"{j[1]:.2f}% - {j[2]:.2f}%",
+                "status": j[3],
+                "worker": j[4] or "-",
+                "completed_at": j[5]
+            } for j in all_jobs
+        ]
     }
 
 # Frontend Dashboard Single-Page App (SPA)
