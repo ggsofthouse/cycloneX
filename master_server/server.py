@@ -302,14 +302,25 @@ def get_job(data: dict):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     
-    # Procura um slot DISPONÍVEL ou reatribui um slot inativo há mais de 30 minutos
-    cutoff = (datetime.utcnow() - timedelta(minutes=30)).isoformat()
+    # Auto-expira slots de workers que ficaram inativos há mais de 45 segundos
+    hb_cutoff = (datetime.utcnow() - timedelta(seconds=45)).isoformat()
+    c.execute("""
+        UPDATE jobs
+        SET status = 'AVAILABLE', assigned_worker = NULL, assigned_at = NULL
+        WHERE status = 'ASSIGNED' AND (
+            assigned_worker NOT IN (SELECT worker_id FROM workers WHERE last_heartbeat >= ?)
+            OR assigned_worker IS NULL
+        )
+    """, (hb_cutoff,))
+    conn.commit()
+
+    # Procura um slot DISPONÍVEL
     c.execute('''
         SELECT id, puzzle, slot_index, range_start, range_end, pct_start, pct_end 
         FROM jobs 
-        WHERE status = 'AVAILABLE' OR (status = 'ASSIGNED' AND assigned_at < ?)
+        WHERE status = 'AVAILABLE'
         ORDER BY slot_index ASC LIMIT 1
-    ''', (cutoff,))
+    ''')
     job = c.fetchone()
     
     if not job:
@@ -380,9 +391,20 @@ def dashboard_stats():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     
-    # Filtra trabalhadores ativos nos últimos 60 segundos
-    cutoff = (datetime.utcnow() - timedelta(seconds=60)).isoformat()
-    c.execute("SELECT worker_id, worker_name, gpu_name, speed_mkeys, last_heartbeat, total_keys_tested FROM workers WHERE last_heartbeat >= ?", (cutoff,))
+    # Auto-expira slots de trabalhadores inativos há mais de 45 segundos
+    hb_cutoff = (datetime.utcnow() - timedelta(seconds=45)).isoformat()
+    c.execute("""
+        UPDATE jobs
+        SET status = 'AVAILABLE', assigned_worker = NULL, assigned_at = NULL
+        WHERE status = 'ASSIGNED' AND (
+            assigned_worker NOT IN (SELECT worker_id FROM workers WHERE last_heartbeat >= ?)
+            OR assigned_worker IS NULL
+        )
+    """, (hb_cutoff,))
+    conn.commit()
+
+    # Filtra trabalhadores ativos nos últimos 45 segundos
+    c.execute("SELECT worker_id, worker_name, gpu_name, speed_mkeys, last_heartbeat, total_keys_tested FROM workers WHERE last_heartbeat >= ?", (hb_cutoff,))
     active_workers = c.fetchall()
     
     total_speed = sum(w[3] for w in active_workers)
