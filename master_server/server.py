@@ -22,7 +22,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "master_pool.db")
-SECRET_KEY = os.environ.get("CYCLONE_SECRET", secrets.token_hex(32))
+SECRET_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "secret.key")
+
+if os.path.exists(SECRET_FILE):
+    with open(SECRET_FILE, "r") as f:
+        SECRET_KEY = f.read().strip()
+else:
+    SECRET_KEY = os.environ.get("CYCLONE_SECRET", secrets.token_hex(32))
+    try:
+        with open(SECRET_FILE, "w") as f:
+            f.write(SECRET_KEY)
+    except Exception:
+        pass
 
 # Inicialização do Banco de Dados SQLite
 def init_db():
